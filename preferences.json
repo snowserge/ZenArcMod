@@ -1,0 +1,206 @@
+[
+  {
+    "type": "separator",
+    "label": "Основное"
+  },
+  {
+    "property": "zen-safe-close.enabled",
+    "type": "checkbox",
+    "label": "Включить функции Zen Safe Close",
+    "defaultValue": true
+  },
+  {
+    "property": "zen-safe-close.protectPinned",
+    "type": "checkbox",
+    "label": "При закрытии pinned выгружать её вместо удаления",
+    "defaultValue": true
+  },
+  {
+    "property": "zen-safe-close.emptyScreen",
+    "type": "checkbox",
+    "label": "После закрытия pinned показывать пустой экран Zen",
+    "defaultValue": true
+  },
+  {
+    "property": "zen-safe-close.neutralFocus",
+    "type": "checkbox",
+    "label": "На пустом экране убирать фокус с адресной строки",
+    "defaultValue": true
+  },
+  {
+    "property": "zen-safe-close.preserveScroll",
+    "type": "checkbox",
+    "label": "Сохранять прокрутку списка при переходе на пустой экран",
+    "defaultValue": true
+  },
+  {
+    "type": "separator",
+    "label": "Кнопки pinned"
+  },
+  {
+    "property": "zen-safe-close.hideClose",
+    "type": "checkbox",
+    "label": "Скрывать крестик закрытия",
+    "defaultValue": true
+  },
+  {
+    "property": "zen-safe-close.hideUnload",
+    "type": "checkbox",
+    "label": "Скрывать кнопку минус (выгрузка)",
+    "defaultValue": false
+  },
+  {
+    "type": "separator",
+    "label": "Оформление вкладок"
+  },
+  {
+    "property": "zen-safe-close.density",
+    "type": "dropdown",
+    "label": "Плотность списка вкладок",
+    "defaultValue": "roomy",
+    "options": [
+      {
+        "label": "Roomy — просторно (как в Zen)",
+        "value": "roomy"
+      },
+      {
+        "label": "Cosy — плотнее",
+        "value": "cosy"
+      },
+      {
+        "label": "Compact — максимально плотно",
+        "value": "compact"
+      }
+    ]
+  },
+  {
+    "property": "zen-safe-close.visuals",
+    "type": "checkbox",
+    "label": "Изменять оформление неактивных pinned",
+    "defaultValue": true
+  },
+  {
+    "property": "zen-safe-close.visualScope",
+    "type": "dropdown",
+    "label": "Область эффекта",
+    "defaultValue": "pinned",
+    "options": [
+      {
+        "label": "Только pinned-вкладки",
+        "value": "pinned"
+      },
+      {
+        "label": "Все вкладки",
+        "value": "all"
+      }
+    ]
+  },
+  {
+    "property": "zen-safe-close.includeFolders",
+    "type": "checkbox",
+    "label": "Включая вкладки внутри папок",
+    "defaultValue": true
+  },
+  {
+    "property": "zen-safe-close.inactive",
+    "type": "dropdown",
+    "label": "Что считать неактивным",
+    "defaultValue": "unloaded",
+    "options": [
+      {
+        "label": "Выгруженные вкладки",
+        "value": "unloaded"
+      },
+      {
+        "label": "Все невыбранные вкладки",
+        "value": "unselected"
+      }
+    ]
+  },
+  {
+    "property": "zen-safe-close.effect",
+    "type": "dropdown",
+    "label": "Цветовой эффект",
+    "defaultValue": "sepia",
+    "options": [
+      {
+        "label": "Сепия",
+        "value": "sepia"
+      },
+      {
+        "label": "Чёрно-белый",
+        "value": "grayscale"
+      },
+      {
+        "label": "Исходные цвета",
+        "value": "none"
+      }
+    ]
+  },
+  {
+    "property": "zen-safe-close.opacity",
+    "type": "string",
+    "label": "Непрозрачность: 0.1–1 (1 — без приглушения)",
+    "defaultValue": "1"
+  },
+  {
+    "property": "zen-safe-close.strength",
+    "type": "string",
+    "label": "Сила сепии / чёрно-белого эффекта: 0–1",
+    "defaultValue": "1"
+  },
+  {
+    "property": "zen-safe-close.saturation",
+    "type": "string",
+    "label": "Насыщенность сепии: 0–2",
+    "defaultValue": "0.6"
+  },
+  {
+    "type": "separator",
+    "label": "Жесты на системных страницах"
+  },
+  {
+    "property": "zen-safe-close.gestures",
+    "type": "checkbox",
+    "label": "Включить жесты ПКМ там, где Gesturefy недоступен",
+    "defaultValue": true
+  },
+  {
+    "property": "zen-safe-close.newGesture",
+    "type": "string",
+    "label": "Новая вкладка: U/D/L/R или стрелки; пусто — выключить",
+    "defaultValue": "D"
+  },
+  {
+    "property": "zen-safe-close.closeGesture",
+    "type": "string",
+    "label": "Закрыть вкладку: U/D/L/R или стрелки; пусто — выключить",
+    "defaultValue": "DR"
+  },
+  {
+    "property": "zen-safe-close.gestureDistance",
+    "type": "string",
+    "label": "Минимальная длина движения, пиксели: 8–200",
+    "defaultValue": "24"
+  },
+  {
+    "type": "separator",
+    "label": "Дополнительно"
+  },
+  {
+    "property": "zen-safe-close.settleTime",
+    "type": "string",
+    "label": "Время коррекции фокуса и прокрутки, мс: 0–1000",
+    "defaultValue": "200"
+  },
+  {
+    "property": "zen-safe-close.menuDelay",
+    "type": "string",
+    "label": "Подавлять меню после жеста, мс: 0–1500",
+    "defaultValue": "500"
+  },
+  {
+    "type": "separator",
+    "label": "Жесты должны отличаться; при ошибке системный обработчик не выполняет действия."
+  }
+]
