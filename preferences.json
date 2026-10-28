@@ -6,7 +6,7 @@
   {
     "property": "zen-safe-close.enabled",
     "type": "checkbox",
-    "label": "Включить функции Zen Safe Close",
+    "label": "Включить функции ZenArcMod",
     "defaultValue": true
   },
   {

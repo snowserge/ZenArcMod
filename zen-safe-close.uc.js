@@ -1,6 +1,6 @@
 // ==UserScript==
-// @name           Zen Safe Close
-// @version        2.1.0
+// @name           ZenArcMod
+// @version        2.1.1
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,8 +9,8 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.1.0";
-  const TAG = "[Zen Safe Close]";
+  const VERSION = "2.1.1";
+  const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {
     Components.utils.reportError(TAG + " Another copy is active. Remove the old AutoConfig mod and restart.");
@@ -83,7 +83,7 @@
     try {
       const box = win.gBrowser.getNotificationBox(win.gBrowser.selectedBrowser);
       const notification = box.appendNotification("zen-safe-close-warning", {
-        label: "Zen Safe Close: pinned tab kept. " + lastError,
+        label: "ZenArcMod: pinned tab kept. " + lastError,
         priority: box.PRIORITY_WARNING_MEDIUM
       }, []);
       notification?.catch?.(() => {});
@@ -590,7 +590,7 @@
         else win.gBrowser.removeTab(s.tab, { animate: true });
       }
     } catch (error) {
-      Components.utils.reportError("[Zen Safe Close gestures] " + error);
+      Components.utils.reportError("[ZenArcMod gestures] " + error);
     }
   }
 

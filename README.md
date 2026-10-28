@@ -1,4 +1,4 @@
-# ZenArcMod — Zen Safe Close
+# ZenArcMod
 
 Sine JavaScript mod for Zen Browser. No Node.js is required to install or run it.
 
@@ -19,7 +19,7 @@ Sine JavaScript mod for Zen Browser. No Node.js is required to install or run it
 1. Install Sine: https://github.com/CosmoCreeper/Sine
 2. In Sine settings, enable JavaScript mods from unofficial sources.
 3. Enter `snowserge/ZenArcMod` in the custom repository installation field and select Install.
-4. Restart Zen once, then open Configure on the Zen Safe Close card.
+4. Restart Zen once, then open Configure on the ZenArcMod card.
 
 Keep `zen.urlbar.replace-newtab` enabled for the native empty-screen behavior.
 Ordinary web-page gestures are provided by Gesturefy and configured separately in that extension.
@@ -27,9 +27,9 @@ Ordinary web-page gestures are provided by Gesturefy and configured separately i
 ## Migrate from the manually installed mod
 
 1. Back up the existing `chrome/sine-mods/zen-safe-close` folder and `chrome/sine-mods/mods.json`.
-2. Disable the existing Zen Safe Close entry and restart Zen so its old hooks are removed.
+2. Disable the existing ZenArcMod entry and restart Zen so its old hooks are removed.
 3. Install this repository through Sine. It uses the same stable mod ID, `zen-safe-close`.
-4. Restart Zen and confirm the card shows version 2.1.0 and a Configure button.
+4. Restart Zen and confirm the card shows version 2.1.1 and a Configure button.
 5. Enable updates for the mod in Sine. Existing `zen-safe-close.*` preferences remain in the browser profile.
 
 Do not run an older AutoConfig/userChrome copy alongside the Sine mod.
