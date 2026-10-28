@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           ZenArcMod
-// @version        2.1.2
+// @version        2.1.3
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,7 +9,7 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.1.2";
+  const VERSION = "2.1.3";
   const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {

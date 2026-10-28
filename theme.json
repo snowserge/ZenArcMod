@@ -2,7 +2,7 @@
   "id": "zen-safe-close",
   "name": "ZenArcMod",
   "description": "Protect pinned tabs, unload to Zen's native empty screen, customize tab appearance and density, and use gestures on system pages.",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "supportsUnload": true,
   "scripts": {
     "zen-safe-close.uc.js": {

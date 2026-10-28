@@ -71,7 +71,8 @@
         "label": "Compact",
         "value": "compact"
       }
-    ]
+    ],
+    "placeholder": false
   },
   {
     "property": "zen-safe-close.visuals",
@@ -93,7 +94,8 @@
         "label": "All tabs",
         "value": "all"
       }
-    ]
+    ],
+    "placeholder": false
   },
   {
     "property": "zen-safe-close.includeFolders",
@@ -115,7 +117,8 @@
         "label": "All unselected tabs",
         "value": "unselected"
       }
-    ]
+    ],
+    "placeholder": false
   },
   {
     "property": "zen-safe-close.effect",
@@ -135,7 +138,8 @@
         "label": "Original colors",
         "value": "none"
       }
-    ]
+    ],
+    "placeholder": false
   },
   {
     "property": "zen-safe-close.opacity",
