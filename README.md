@@ -29,7 +29,7 @@ Ordinary web-page gestures are provided by Gesturefy and configured separately i
 1. Back up the existing `chrome/sine-mods/zen-safe-close` folder and `chrome/sine-mods/mods.json`.
 2. Disable the existing ZenArcMod entry and restart Zen so its old hooks are removed.
 3. Install this repository through Sine. It uses the same stable mod ID, `zen-safe-close`.
-4. Restart Zen and confirm the card shows version 2.1.1 and a Configure button.
+4. Restart Zen and confirm the card shows version 2.1.2 and a Configure button.
 5. Enable updates for the mod in Sine. Existing `zen-safe-close.*` preferences remain in the browser profile.
 
 Do not run an older AutoConfig/userChrome copy alongside the Sine mod.

@@ -1,74 +1,74 @@
 [
   {
     "type": "separator",
-    "label": "Основное"
+    "label": "General"
   },
   {
     "property": "zen-safe-close.enabled",
     "type": "checkbox",
-    "label": "Включить функции ZenArcMod",
+    "label": "Enable ZenArcMod",
     "defaultValue": true
   },
   {
     "property": "zen-safe-close.protectPinned",
     "type": "checkbox",
-    "label": "При закрытии pinned выгружать её вместо удаления",
+    "label": "Unload pinned tabs instead of closing them",
     "defaultValue": true
   },
   {
     "property": "zen-safe-close.emptyScreen",
     "type": "checkbox",
-    "label": "После закрытия pinned показывать пустой экран Zen",
+    "label": "Show Zen's empty screen after closing a pinned tab",
     "defaultValue": true
   },
   {
     "property": "zen-safe-close.neutralFocus",
     "type": "checkbox",
-    "label": "На пустом экране убирать фокус с адресной строки",
+    "label": "Remove address bar focus on the empty screen",
     "defaultValue": true
   },
   {
     "property": "zen-safe-close.preserveScroll",
     "type": "checkbox",
-    "label": "Сохранять прокрутку списка при переходе на пустой экран",
+    "label": "Preserve tab list scroll position when showing the empty screen",
     "defaultValue": true
   },
   {
     "type": "separator",
-    "label": "Кнопки pinned"
+    "label": "Pinned tab buttons"
   },
   {
     "property": "zen-safe-close.hideClose",
     "type": "checkbox",
-    "label": "Скрывать крестик закрытия",
+    "label": "Hide the close button on pinned tabs",
     "defaultValue": true
   },
   {
     "property": "zen-safe-close.hideUnload",
     "type": "checkbox",
-    "label": "Скрывать кнопку минус (выгрузка)",
+    "label": "Hide the minus (unload) button on pinned tabs",
     "defaultValue": false
   },
   {
     "type": "separator",
-    "label": "Оформление вкладок"
+    "label": "Tab appearance"
   },
   {
     "property": "zen-safe-close.density",
     "type": "dropdown",
-    "label": "Плотность списка вкладок",
+    "label": "Tab list density",
     "defaultValue": "roomy",
     "options": [
       {
-        "label": "Roomy — просторно (как в Zen)",
+        "label": "Roomy — native Zen spacing",
         "value": "roomy"
       },
       {
-        "label": "Cosy — плотнее",
+        "label": "Cosy",
         "value": "cosy"
       },
       {
-        "label": "Compact — максимально плотно",
+        "label": "Compact",
         "value": "compact"
       }
     ]
@@ -76,21 +76,21 @@
   {
     "property": "zen-safe-close.visuals",
     "type": "checkbox",
-    "label": "Изменять оформление неактивных pinned",
+    "label": "Apply appearance effects to inactive tabs",
     "defaultValue": true
   },
   {
     "property": "zen-safe-close.visualScope",
     "type": "dropdown",
-    "label": "Область эффекта",
+    "label": "Appearance effect scope",
     "defaultValue": "pinned",
     "options": [
       {
-        "label": "Только pinned-вкладки",
+        "label": "Pinned tabs only",
         "value": "pinned"
       },
       {
-        "label": "Все вкладки",
+        "label": "All tabs",
         "value": "all"
       }
     ]
@@ -98,21 +98,21 @@
   {
     "property": "zen-safe-close.includeFolders",
     "type": "checkbox",
-    "label": "Включая вкладки внутри папок",
+    "label": "Include tabs inside folders",
     "defaultValue": true
   },
   {
     "property": "zen-safe-close.inactive",
     "type": "dropdown",
-    "label": "Что считать неактивным",
+    "label": "Treat these tabs as inactive",
     "defaultValue": "unloaded",
     "options": [
       {
-        "label": "Выгруженные вкладки",
+        "label": "Unloaded tabs",
         "value": "unloaded"
       },
       {
-        "label": "Все невыбранные вкладки",
+        "label": "All unselected tabs",
         "value": "unselected"
       }
     ]
@@ -120,19 +120,19 @@
   {
     "property": "zen-safe-close.effect",
     "type": "dropdown",
-    "label": "Цветовой эффект",
+    "label": "Color effect",
     "defaultValue": "sepia",
     "options": [
       {
-        "label": "Сепия",
+        "label": "Sepia",
         "value": "sepia"
       },
       {
-        "label": "Чёрно-белый",
+        "label": "Grayscale",
         "value": "grayscale"
       },
       {
-        "label": "Исходные цвета",
+        "label": "Original colors",
         "value": "none"
       }
     ]
@@ -140,67 +140,67 @@
   {
     "property": "zen-safe-close.opacity",
     "type": "string",
-    "label": "Непрозрачность: 0.1–1 (1 — без приглушения)",
+    "label": "Opacity: 0.1–1 (1 = fully opaque)",
     "defaultValue": "1"
   },
   {
     "property": "zen-safe-close.strength",
     "type": "string",
-    "label": "Сила сепии / чёрно-белого эффекта: 0–1",
+    "label": "Sepia / grayscale strength: 0–1",
     "defaultValue": "1"
   },
   {
     "property": "zen-safe-close.saturation",
     "type": "string",
-    "label": "Насыщенность сепии: 0–2",
+    "label": "Sepia saturation: 0–2",
     "defaultValue": "0.6"
   },
   {
     "type": "separator",
-    "label": "Жесты на системных страницах"
+    "label": "System page gestures"
   },
   {
     "property": "zen-safe-close.gestures",
     "type": "checkbox",
-    "label": "Включить жесты ПКМ там, где Gesturefy недоступен",
+    "label": "Enable right mouse button gestures where Gesturefy is unavailable",
     "defaultValue": true
   },
   {
     "property": "zen-safe-close.newGesture",
     "type": "string",
-    "label": "Новая вкладка: U/D/L/R или стрелки; пусто — выключить",
+    "label": "New tab gesture: U/D/L/R or arrows; leave empty to disable",
     "defaultValue": "D"
   },
   {
     "property": "zen-safe-close.closeGesture",
     "type": "string",
-    "label": "Закрыть вкладку: U/D/L/R или стрелки; пусто — выключить",
+    "label": "Close tab gesture: U/D/L/R or arrows; leave empty to disable",
     "defaultValue": "DR"
   },
   {
     "property": "zen-safe-close.gestureDistance",
     "type": "string",
-    "label": "Минимальная длина движения, пиксели: 8–200",
+    "label": "Minimum movement distance in pixels: 8–200",
     "defaultValue": "24"
   },
   {
     "type": "separator",
-    "label": "Дополнительно"
+    "label": "Advanced"
   },
   {
     "property": "zen-safe-close.settleTime",
     "type": "string",
-    "label": "Время коррекции фокуса и прокрутки, мс: 0–1000",
+    "label": "Focus and scroll correction time in milliseconds: 0–1000",
     "defaultValue": "200"
   },
   {
     "property": "zen-safe-close.menuDelay",
     "type": "string",
-    "label": "Подавлять меню после жеста, мс: 0–1500",
+    "label": "Suppress context menu after a gesture in milliseconds: 0–1500",
     "defaultValue": "500"
   },
   {
     "type": "separator",
-    "label": "Жесты должны отличаться; при ошибке системный обработчик не выполняет действия."
+    "label": "Gestures must be different. Invalid settings disable the system page gesture handler."
   }
 ]

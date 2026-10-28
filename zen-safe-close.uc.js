@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           ZenArcMod
-// @version        2.1.1
+// @version        2.1.2
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,7 +9,7 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.1.1";
+  const VERSION = "2.1.2";
   const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {
@@ -55,10 +55,10 @@
     next.closeGesture = normalize(next.closeGesture);
     configErrors = [];
     if (![next.newGesture, next.closeGesture].every(value => /^[UDLR]{0,12}$/.test(value))) {
-      configErrors.push("Жест: используйте только U, D, L, R или стрелки (до 12 направлений).");
+      configErrors.push("Gesture: use only U, D, L, R or arrow symbols (up to 12 directions).");
     }
     if (next.newGesture && next.newGesture === next.closeGesture) {
-      configErrors.push("Жесты новой вкладки и закрытия совпадают.");
+      configErrors.push("New tab and close tab gestures must be different.");
     }
     next.gesturesValid = configErrors.length === 0;
     config = Object.freeze(next);
