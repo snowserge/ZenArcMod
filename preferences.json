@@ -180,6 +180,12 @@
     "defaultValue": false
   },
   {
+    "property": "zen-safe-close.collapseSleepingFoldersAtStartup",
+    "type": "checkbox",
+    "label": "Collapse folders without loaded tabs at startup",
+    "defaultValue": true
+  },
+  {
     "type": "separator",
     "label": "Mouse gestures on all pages"
   },
