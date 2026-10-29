@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           ZenArcMod
-// @version        2.5.0
+// @version        2.5.1
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,7 +9,7 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.5.0";
+  const VERSION = "2.5.1";
   const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {
@@ -292,7 +292,8 @@
         configErrors: [...configErrors], configRevision,
         lastError, hooks: originals.map(item => item[1]),
         folderLayout: win.__zenSafeCloseLoadedFolders?.status, sessionMemory: win.__zenSafeCloseSessionMemory?.status,
-        startupFolders: win.__zenSafeCloseStartupFolderRule?.status };
+        startupFolders: win.__zenSafeCloseStartupFolderRule?.status,
+        nativeSync: win.__zenSafeCloseNativeSync?.status };
     }
   };
   function install() {
@@ -305,6 +306,7 @@
       const gb = win.gBrowser, manager = win.gZenPinnedTabManager;
       if (!gb || !manager) throw new Error("Zen browser API unavailable");
       wrap(gb, "removeTab", original => function(tab, ...args) {
+        if (win.__zenSafeCloseNativeSync?.allows(tab)) return original.call(this, tab, ...args);
         if (enabled() && tab === win.gZenWorkspaces?._emptyTab) return undefined;
         if (protect(tab) && !args[0]?.adoptedBy) { handle([tab]); return undefined; }
         return original.call(this, tab, ...args);
@@ -312,8 +314,9 @@
       wrap(gb, "removeTabs", original => function(tabs, ...args) {
         const all = Array.from(tabs);
         if (!enabled()) return original.call(this, tabs, ...args);
-        const pins = all.filter(protect);
-        const ordinary = all.filter(tab => !protect(tab) && tab !== win.gZenWorkspaces?._emptyTab);
+        const protectedHere = tab => protect(tab) && !win.__zenSafeCloseNativeSync?.allows(tab);
+        const pins = all.filter(protectedHere);
+        const ordinary = all.filter(tab => !protectedHere(tab) && tab !== win.gZenWorkspaces?._emptyTab);
         if (!pins.length && ordinary.length === all.length) return original.call(this, tabs, ...args);
         if (pins.length) handle(pins);
         if (ordinary.length) return original.call(this, ordinary, ...args);
@@ -472,6 +475,89 @@
   win.addEventListener("unload", destroy, { once: true });
   win.__zenSafeCloseVisuals = { refresh, destroy };
   refresh();
+})();
+
+(() => {
+  "use strict";
+  const win = window, api = win.__zenSafeClose;
+  if (!api || !win.gBrowser) return;
+  win.__zenSafeCloseNativeSync?.destroy();
+  const SYNC = "__zenSafeCloseNativeSyncOwners";
+  const host = Services.appShell.hiddenDOMWindow;
+  const shared = host[SYNC] ||= { owners: new Set(), ids: new Map(), hooks: [], errors: [] };
+  let stopped = false;
+  // These IDs exist only while Zen applies a native removal. Never persist a
+  // personal tab list, and never authorize unrelated tabs during async sync.
+  function authorize(ids, run) {
+    const targets = [...new Set(ids.filter(id => typeof id === "string" && id))];
+    for (const id of targets) shared.ids.set(id, (shared.ids.get(id) || 0) + 1);
+    const release = () => {
+      for (const id of targets) {
+        const count = shared.ids.get(id) - 1;
+        if (count) shared.ids.set(id, count); else shared.ids.delete(id);
+      }
+      if (!shared.owners.size && !shared.ids.size && host[SYNC] === shared) delete host[SYNC];
+    };
+    let result;
+    try { result = run(); }
+    catch (error) { release(); throw error; }
+    if (result && typeof result.then === "function") return Promise.resolve(result).finally(release);
+    release();
+    return result;
+  }
+  function hook(module, name, factory) {
+    if (shared.hooks.some(item => item[0] === module && item[1] === name)) return;
+    const original = module?.[name];
+    if (typeof original !== "function") throw new Error(name + " unavailable");
+    const replacement = factory(original);
+    module[name] = replacement;
+    if (module[name] !== replacement) throw new Error("Cannot wrap " + name);
+    shared.hooks.push([module, name, original, replacement]);
+  }
+  shared.owners.add(api);
+  shared.errors = [];
+  for (const [uri, exported, name, ids] of [
+    ["resource:///modules/zen/ZenWindowSync.sys.mjs", "ZenWindowSync", "on_TabClose",
+      event => [event?.target?.id]],
+    ["resource:///modules/zen/ZenSpacesSyncApplier.sys.mjs", "ZenSpacesSyncApplier", "applyBatch",
+      records => Array.from(records || []).filter(record => record?.deleted).map(record => record.id)]
+  ]) {
+    try {
+      const module = ChromeUtils.importESModule(uri)[exported];
+      hook(module, name, original => function(...args) {
+        return authorize(ids(args[0]), () => original.apply(this, args));
+      });
+    } catch (error) {
+      // Older Zen releases may not have the cloud-sync module yet.
+      shared.errors.push(exported + ": " + String(error));
+      Components.utils.reportError("[ZenArcMod sync] " + error);
+    }
+  }
+  const originalUninstall = api.uninstall;
+  function destroy() {
+    if (stopped) return;
+    stopped = true;
+    shared.owners.delete(api);
+    if (!shared.owners.size) {
+      for (const [module, name, original, replacement] of shared.hooks.splice(0).reverse()) {
+        if (module[name] === replacement) module[name] = original;
+      }
+      // Preserve in-flight tombstones across Sine hot reload, until finally().
+      if (!shared.ids.size && host[SYNC] === shared) delete host[SYNC];
+    }
+    win.removeEventListener("unload", destroy);
+    if (api.uninstall === combinedUninstall) api.uninstall = originalUninstall;
+    if (win.__zenSafeCloseNativeSync?.destroy === destroy) delete win.__zenSafeCloseNativeSync;
+  }
+  function combinedUninstall() { destroy(); return originalUninstall.call(api); }
+  api.uninstall = combinedUninstall;
+  win.addEventListener("unload", destroy, { once: true });
+  if (typeof win.addUnloadListener === "function") win.addUnloadListener(combinedUninstall);
+  win.__zenSafeCloseNativeSync = {
+    allows: tab => !stopped && !!tab?.id && shared.ids.has(tab.id), destroy,
+    get status() { return { hooks: shared.hooks.map(item => item[1]),
+      activeRemovals: shared.ids.size, errors: [...shared.errors] }; }
+  };
 })();
 
 (() => {

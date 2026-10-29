@@ -2,7 +2,7 @@
   "id": "zen-safe-close",
   "name": "ZenArcMod",
   "description": "Protect pinned tabs, unload to Zen's native empty screen, control folder visibility and tab appearance, and use mouse gestures with a growing trail.",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "supportsUnload": true,
   "scripts": {
     "zen-safe-close.uc.js": {
@@ -16,5 +16,5 @@
     "zen"
   ],
   "homepage": "https://github.com/snowserge/ZenArcMod",
-  "updatedAt": "2026-10-29T15:25:15Z"
+  "updatedAt": "2026-10-29T16:35:50Z"
 }
