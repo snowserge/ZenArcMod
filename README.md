@@ -5,6 +5,7 @@ Sine JavaScript mod for Zen Browser. No Node.js is required to install or run it
 ## Features
 
 - Close ordinary tabs normally. Keep pinned tabs and discard their contents.
+- Allow Zen's native sync to remove stale pinned copies when a tab is unpinned or deleted elsewhere.
 - Show Zen's existing native empty screen after closing a pinned tab, without creating a blank tab row.
 - Preserve sidebar scroll and clear the address-bar focus on that empty screen.
 - Hide the close X independently of the minus/unload button.
@@ -33,7 +34,7 @@ Disable Gesturefy (and any other mouse gesture extension) before enabling this m
 1. Back up the existing `chrome/sine-mods/zen-safe-close` folder and `chrome/sine-mods/mods.json`.
 2. Disable the existing ZenArcMod entry and restart Zen so its old hooks are removed.
 3. Install this repository through Sine. It uses the same stable mod ID, `zen-safe-close`.
-4. Restart Zen and confirm the card shows version 2.5.0 and a Configure button.
+4. Restart Zen and confirm the card shows version 2.5.1 and a Configure button.
 5. Enable updates for the mod in Sine. Existing `zen-safe-close.*` preferences remain in the browser profile.
 
 Do not run an older AutoConfig/userChrome copy alongside the Sine mod.
@@ -45,6 +46,14 @@ Checkboxes and dropdowns apply immediately; text fields apply when Sine commits 
 Roomy restores native tab dimensions. Density applies to ordinary and pinned tab rows, including folder children, but leaves Essentials tiles and folder headers at native dimensions.
 Sepia's default scope remains pinned tabs only, independently of density.
 Disabling pinned protection restores Zen's native close behavior.
+There is no built-in list of personal tabs or URLs, and the mod never pins tabs.
+Session memory marks existing tabs as loaded/unloaded; it does not recreate or
+re-pin them. Version 2.5.1 corrects a close-protection conflict with native sync:
+Zen's explicit removal of a matching tab copy now bypasses pinned protection.
+Other pinned tabs remain protected while sync is running. Update the mod on
+every computer, restart Zen, then repeat Unpin and sync. This allows subsequent
+native removals; it does not rewrite remote sync data or guarantee automatic
+cleanup of already-stale copies. See [native sync verification](tests/native-sync.md).
 
 Under **Folder visibility**, enable **Always show loaded tabs in collapsed folders**
 to keep every loaded tab visible in all folders. It is off by default and applies
@@ -100,7 +109,7 @@ Runtime files are `theme.json`, `preferences.json`, and `zen-safe-close.uc.js`.
 There is no build step or runtime dependency on Node.js.
 For development checks, run `node --check zen-safe-close.uc.js` and
 `node --test tests/*.test.cjs` (Node.js 18+).
-These tests execute the visual, folder, session and gesture modules with simulated browser objects.
+These tests execute close protection and the visual, folder, session, sync and gesture modules with simulated browser objects.
 They cover CSS ownership, recognition, tab commands, cancellation, trail drawing
 and cleanup; they do not test Gecko rendering or native input.
 See [folder regression notes](tests/folder-regression.md) for the cause, upstream
