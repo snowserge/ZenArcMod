@@ -100,3 +100,18 @@ integration has been verified here. Live acceptance on macOS and Windows:
    by the mod.
 6. Disable the option and confirm original startup/on-demand preferences return.
    Check Sine hot reload, full browser quit and removal, then a normal restart.
+
+## Immediate row presentation (2.4.1)
+
+Session memory exposes saved-loaded intent before page reload completion.
+With loaded-folder visibility enabled, all remembered rows remain visible
+while queued, loading or timed out; native pending flags are not falsified.
+These rows are not treated as unloaded by the sepia/grayscale effect. Explicit
+discard clears intent and hides its row immediately. Disabling memory returns
+visibility to actual pending state.
+
+This stabilizes the sidebar without making independent websites finish at the
+same instant. The two-slot background queue is retained; page content, favicons
+and network/authentication can still take different amounts of time.
+Integration tests exercise both shipped modules together, not just isolated
+URL/pending predicates. Real restart/network/rendering checks are still required.

@@ -125,3 +125,11 @@ test("disabling visuals or the mod clears appearance, uninstall removes resource
     removed: true, disconnected: true, uninstalled: true, listeners: 0
   });
 });
+
+test('remembered rows waiting for background restore are not painted as unloaded',()=>{
+  const h=setup();h.window.__zenSafeCloseSessionMemory={isRememberedLoaded:tab=>tab===h.unloaded};
+  h.change({});assert(h.unloaded.attrs.has('pending'));
+  assert(!h.unloaded.attrs.has('data-zsc-unloaded'));
+  h.window.__zenSafeCloseSessionMemory.isRememberedLoaded=()=>false;h.change({});
+  assert(h.unloaded.attrs.has('data-zsc-unloaded'));
+});
