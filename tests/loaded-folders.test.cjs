@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { test } = require('node:test');
-const source = fs.readFileSync(path.join(__dirname, '../zen-safe-close.uc.js'), 'utf8');
+const source = fs.readFileSync(process.env.ZSC_FOLDER_SOURCE || path.join(__dirname, '../zen-safe-close.uc.js'), 'utf8');
 const start = source.lastIndexOf('(() => {', source.indexOf('const FLAG = "data-zsc-loaded-folders"'));
 const code = source.slice(start, source.indexOf('\n(() => {', start + 1));
 const HIDE = 'data-zsc-folder-hidden';
@@ -60,8 +60,9 @@ function setup(on = true, available = true) {
     gBrowser: { tabContainer: { querySelectorAll: () => folders,
       _invalidateCachedVisibleTabs() { invalidations++; } } },
     gZenFolders: available ? manager : undefined,
-    addEventListener(type,fn) { listeners.set(type,fn); },
-    removeEventListener(type) { listeners.delete(type); },
+    addEventListener(type,fn) { if (!listeners.has(type)) listeners.set(type,new Set()); listeners.get(type).add(fn); },
+    removeEventListener(type,fn) { const set=listeners.get(type);set?.delete(fn);if (!set?.size) listeners.delete(type); },
+    getComputedStyle: () => ({overflowY: "auto"}),
     requestAnimationFrame(fn) { const n=++id;frames.set(n,fn);return n; },
     cancelAnimationFrame(n) { frames.delete(n); } };
   const errors = [];
@@ -73,9 +74,10 @@ function setup(on = true, available = true) {
     MutationObserver,Components:{utils:{reportError:e=>errors.push(e)}}});
   const refresh=()=>window.__zenSafeCloseLoadedFolders.refresh();
   function flush() {const work=[...frames.values()];frames.clear();work.forEach(fn=>fn());}
-  return { folder,tab,folders,api,manager,originals,calls,root,window,errors,frames,listeners,
+  function fire(type) { for (const fn of [...(listeners.get(type)||[])]) fn({type}); }
+  return { folder,tab,folders,api,manager,originals,calls,root,window,errors,frames,listeners,fire,
     refresh,flush,get observer(){return observer;},
-    change(value) {api.config.showLoadedInFolders=value;listeners.get('ZenSafeCloseConfigChanged')();} };
+    change(value) {api.config.showLoadedInFolders=value;fire('ZenSafeCloseConfigChanged');} };
 }
 
 test('off by default delegates to native methods and leaves rows untouched',async()=>{
@@ -163,4 +165,60 @@ test('disabling the entire mod also restores standard visibility',()=>{
   const h=setup(),f=h.folder(),a=h.tab(f),b=h.tab(f);a.selected=true;h.refresh();assert(b.visible);
   h.api.config.enabled=false;h.refresh();assert(!b.visible);assert(a.visible);
   assert(!h.root.hasAttribute('data-zsc-loaded-folders'));
+});
+
+test('repeated renders never temporarily reveal pending rows or drop container layout',()=>{
+  const h=setup(),f=h.folder(),sleep=h.tab(f,true);h.tab(f);h.refresh();
+  const removals=[];
+  for (const n of [sleep,f.groupContainer,f.groupStartElement]) {
+    const original=n.removeAttribute;
+    n.removeAttribute=name=>{if(n.hasAttribute(name)) removals.push(name);original(name);};
+  }
+  h.refresh();h.refresh();
+  assert.deepEqual(removals,[],'unchanged nodes must not be torn down and re-added during layout reads');
+});
+function attachScroller(h,f) {
+  const box=node('scrollbox');Object.assign(box,{scrollTop:240,scrollLeft:7,clientHeight:400,scrollHeight:1800,
+    getBoundingClientRect:()=>({top:0,bottom:400})});
+  const header=f.labelElement.parentElement;header.parentElement=box;
+  header.getBoundingClientRect=()=>({top:500-box.scrollTop,bottom:532-box.scrollTop});
+  h.window.gZenWorkspaces={activeScrollbox:box,activeWorkspace:'one'};
+  return {box,header};
+}
+test('expansion preserves sidebar position and header through deferred layout',async()=>{
+  const h=setup(),f=h.folder();h.tab(f);h.tab(f,true);h.refresh();
+  const {box,header}=attachScroller(h,f),top=header.getBoundingClientRect().top;
+  h.window.gBrowser.tabContainer._invalidateCachedVisibleTabs=()=>{box.scrollTop+=180;};
+  f.collapsed=false;await h.manager.animateExpand(f);
+  assert.equal(box.scrollTop,240);assert.equal(header.getBoundingClientRect().top,top);
+  h.flush();assert.equal(box.scrollTop,240);h.flush();assert.equal(box.scrollTop,240);
+  assert.equal(box.scrollLeft,7);assert.equal(h.frames.size,0);
+});
+test('wheel, pointer, keyboard and tab selection cancel deferred position correction',async()=>{
+  for(const event of ['wheel','touchstart','pointerdown','mousedown','keydown','TabSelect','blur']) {
+    const h=setup(),f=h.folder();h.tab(f);h.refresh();const {box}=attachScroller(h,f);
+    await h.manager.animateExpand(f);box.scrollTop=680;h.fire(event);h.flush();h.flush();
+    assert.equal(box.scrollTop,680,event+' must keep the newer position');
+  }
+});
+test('new folder toggle supersedes old position correction; workspace change cancels it',async()=>{
+  const h=setup(),f=h.folder();h.tab(f);h.refresh();const {box}=attachScroller(h,f);
+  await h.manager.animateExpand(f);box.scrollTop=300;
+  await h.manager.animateCollapse(f);h.flush();assert.equal(box.scrollTop,300);
+  h.window.gZenWorkspaces.activeWorkspace='two';box.scrollTop=550;h.flush();
+  assert.equal(box.scrollTop,550);
+});
+test('uninstall cancels position guard callbacks and all temporary input listeners',async()=>{
+  const h=setup(),f=h.folder();h.tab(f);h.refresh();attachScroller(h,f);
+  await h.manager.animateExpand(f);assert(h.frames.size>1);
+  h.api.uninstall();assert.equal(h.frames.size,0);assert.equal(h.listeners.size,0);
+});
+
+test('opening a folder that first makes the sidebar scrollable keeps its visible header',async()=>{
+  const h=setup(),f=h.folder();h.tab(f);h.tab(f,true);h.refresh();
+  const {box,header}=attachScroller(h,f);box.scrollTop=0;box.scrollHeight=400;
+  header.getBoundingClientRect=()=>({top:100-box.scrollTop,bottom:132-box.scrollTop});
+  h.window.gBrowser.tabContainer._invalidateCachedVisibleTabs=()=>{box.scrollHeight=1800;box.scrollTop=180;};
+  f.collapsed=false;await h.manager.animateExpand(f);assert.equal(box.scrollTop,0);
+  h.flush();h.flush();assert.equal(header.getBoundingClientRect().top,100);
 });
