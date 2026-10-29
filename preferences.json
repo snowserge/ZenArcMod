@@ -161,12 +161,12 @@
   },
   {
     "type": "separator",
-    "label": "System page gestures"
+    "label": "Mouse gestures on all pages"
   },
   {
     "property": "zen-safe-close.gestures",
     "type": "checkbox",
-    "label": "Enable right mouse button gestures where Gesturefy is unavailable",
+    "label": "Enable right mouse button gestures on all tab pages",
     "defaultValue": true
   },
   {
@@ -186,6 +186,24 @@
     "type": "string",
     "label": "Minimum movement distance in pixels: 8–200",
     "defaultValue": "24"
+  },
+  {
+    "property": "zen-safe-close.trail",
+    "type": "checkbox",
+    "label": "Show a growing mouse trail",
+    "defaultValue": true
+  },
+  {
+    "property": "zen-safe-close.trailColor",
+    "type": "string",
+    "label": "Trail color: #RRGGBB",
+    "defaultValue": "#168f85"
+  },
+  {
+    "property": "zen-safe-close.trailWidth",
+    "type": "string",
+    "label": "Maximum trail width in pixels: 2–24",
+    "defaultValue": "12"
   },
   {
     "type": "separator",

@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           ZenArcMod
-// @version        2.1.4
+// @version        2.2.0
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,7 +9,7 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.1.4";
+  const VERSION = "2.2.0";
   const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {
@@ -19,7 +19,7 @@
   let disposed = false, quitting = false, installed = false;
   let lastError = "", cancelLanding = null;
   const PREFIX = "zen-safe-close.";
-  const DEFAULTS = {"enabled":true,"protectPinned":true,"emptyScreen":true,"neutralFocus":true,"preserveScroll":true,"hideClose":true,"hideUnload":false,"visuals":true,"includeFolders":true,"inactive":"unloaded","effect":"sepia","opacity":"1","strength":"1","saturation":"0.6","gestures":true,"newGesture":"D","closeGesture":"DR","gestureDistance":"24","settleTime":"200","menuDelay":"500","visualScope":"pinned","density":"roomy"};
+  const DEFAULTS = {"enabled":true,"protectPinned":true,"emptyScreen":true,"neutralFocus":true,"preserveScroll":true,"hideClose":true,"hideUnload":false,"visuals":true,"includeFolders":true,"inactive":"unloaded","effect":"sepia","opacity":"1","strength":"1","saturation":"0.6","gestures":true,"newGesture":"D","closeGesture":"DR","gestureDistance":"24","settleTime":"200","menuDelay":"500","visualScope":"pinned","density":"roomy","trail":true,"trailColor":"#168f85","trailWidth":"12"};
   let config = {}, configRevision = 0, configErrors = [];
   let onConfigChanged = () => {};
   function readConfig() {
@@ -41,6 +41,8 @@
     number("strength", 0, 1);
     number("saturation", 0, 2);
     number("gestureDistance", 8, 200);
+    number("trailWidth", 2, 24);
+    if (!/^#[0-9a-f]{6}$/i.test(next.trailColor)) next.trailColor = DEFAULTS.trailColor;
     number("settleTime", 0, 1000);
     number("menuDelay", 0, 1500);
     if (!["roomy", "cosy", "compact"].includes(next.density)) next.density = "roomy";
@@ -326,6 +328,7 @@
       S.obs.addObserver(quitObserver, "quit-application-granted");
       watchingQuit = true;
       installed = true;
+      win.dispatchEvent(new win.CustomEvent("ZenSafeCloseConfigChanged"));
     } catch (error) { warn(error); destroy(); }
   }
   onConfigChanged = () => {
@@ -470,218 +473,266 @@
 
 (() => {
   "use strict";
-  const win = window;
-  const api = win.__zenSafeClose;
+  const win = window, api = win.__zenSafeClose;
   if (!api || !win.gBrowser) return;
+  win.__zenSafeCloseGestures?.destroy();
   win.__zenSafeCloseSystemGestures?.destroy();
 
   const settings = () => api.config;
   const browser = () => win.gBrowser.selectedBrowser;
   const now = () => win.performance.now();
-  let state = null, stopped = false, suppressUntil = 0;
+  let state = null, stopped = false, suppressUntil = 0, lastError = "";
   const jobs = new Set();
   const enabled = () => !stopped && win.__zenSafeClose === api &&
     api.status?.enabled !== false && api.status?.installed !== false &&
-    settings().gestures && settings().gesturesValid &&
+    settings().enabled && settings().gestures && settings().gesturesValid &&
     !!(settings().newGesture || settings().closeGesture);
+  function report(error) {
+    lastError = String(error);
+    Components.utils.reportError("[ZenArcMod gestures] " + lastError);
+  }
 
-  function fallbackNeeded(b) {
-    const uri = b?.currentURI;
-    const url = uri?.spec || "";
-    if (/^about:(blank|srcdoc)(?:[?#]|$)/i.test(url) &&
-        win.gBrowser.selectedTab !== win.gZenWorkspaces?._emptyTab) {
-      const origin = b.contentPrincipal?.URI?.spec || "";
-      if (/^https?:/i.test(origin)) return false;
+  // Shared across browser windows. On macOS/Linux a context menu on mouse-down
+  // captures the mouse before a gesture can start. Defer it until mouse-up,
+  // preserving the user's pref and restoring it after the last owner unloads.
+  const menuPref = "ui.context_menus.after_mouseup";
+  const sharedHost = Services.appShell.hiddenDOMWindow;
+  const sharedKey = "__zenSafeCloseGestureMenu";
+  let menuOwner = null;
+  function syncMenuPref() {
+    if (enabled() && !menuOwner) {
+      try {
+        if (!sharedHost[sharedKey]) {
+          const prefs = Services.prefs;
+          const saved = { hadUser: prefs.prefHasUserValue(menuPref),
+            value: prefs.getBoolPref(menuPref, false), owners: new Set() };
+          if (!saved.value) prefs.setBoolPref(menuPref, true);
+          sharedHost[sharedKey] = saved;
+        }
+        menuOwner = sharedHost[sharedKey];
+        menuOwner.owners.add(win);
+      } catch (error) { report(error); }
+    } else if (!enabled() && menuOwner) {
+      menuOwner.owners.delete(win);
+      if (!menuOwner.owners.size) {
+        try {
+          // Preserve any newer user/external change instead of overwriting it.
+          if (Services.prefs.getBoolPref(menuPref, false) && !menuOwner.value) {
+            if (menuOwner.hadUser) Services.prefs.setBoolPref(menuPref, menuOwner.value);
+            else Services.prefs.clearUserPref(menuPref);
+          }
+        } catch (error) { report(error); }
+        delete sharedHost[sharedKey];
+      }
+      menuOwner = null;
     }
-    if (/^(about|moz-extension|view-source|chrome|resource):/i.test(url)) return true;
-    if (b?.documentContentType === "application/pdf") return true;
-    try {
-      const policy = win.WebExtensionPolicy;
-      if (policy?.isRestrictedURI?.(uri) ||
-          policy?.isQuarantinedURI?.(uri)) return true;
-    } catch (_) {}
-    try {
-      const host = uri.host.toLowerCase();
-      const domains = Services.prefs.getStringPref(
-        "extensions.webextensions.restrictedDomains", ""
-      ).split(",").map(value => value.trim().toLowerCase()).filter(Boolean);
-      return domains.some(domain => host === domain || host.endsWith("." + domain));
-    } catch (_) {
-      return false;
+  }
+
+  // The overlay belongs to browser chrome: page CSS, zoom, iframes and CSP
+  // cannot restyle it. Screen coordinates are converted to window CSS pixels;
+  // backing pixels are scaled separately for Retina/mixed-DPI displays.
+  let canvas = null, ctx = null, frame = null, previous = null, distance = 0;
+  let bounds = null, queued = [];
+  function clearTrail() {
+    if (frame !== null) win.cancelAnimationFrame(frame);
+    frame = null;
+    canvas?.remove();
+    canvas = ctx = previous = bounds = null;
+    queued = [];
+    distance = 0;
+  }
+  function point(event) { return { x: event.screenX, y: event.screenY }; }
+  function drawTrail() {
+    frame = null;
+    if (!ctx) return;
+    for (const p of queued) {
+      const next = { x: p.x - win.mozInnerScreenX - bounds.left,
+        y: p.y - win.mozInnerScreenY - bounds.top };
+      if (previous) {
+        const dx = next.x - previous.x, dy = next.y - previous.y;
+        const length = Math.hypot(dx, dy);
+        if (length < 0.5) continue;
+        const max = settings().trailWidth;
+        const radius = d => Math.min(max, 0.8 + d / 45) / 2;
+        const r0 = radius(distance), r1 = radius(distance + length);
+        const nx = -dy / length, ny = dx / length;
+        distance += length;
+        // A filled ribbon with round joins; width depends on travelled length,
+        // not event frequency or mouse speed. No Gesturefy source is embedded.
+        ctx.beginPath();
+        ctx.moveTo(previous.x + nx * r0, previous.y + ny * r0);
+        ctx.lineTo(next.x + nx * r1, next.y + ny * r1);
+        ctx.lineTo(next.x - nx * r1, next.y - ny * r1);
+        ctx.lineTo(previous.x - nx * r0, previous.y - ny * r0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(next.x, next.y, r1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      previous = next;
     }
+    queued = [];
+  }
+  function trail(event) {
+    if (!settings().trail) return;
+    try {
+      if (!canvas) {
+        bounds = win.gBrowser.tabpanels.getBoundingClientRect();
+        if (bounds.width <= 0 || bounds.height <= 0) return;
+        canvas = document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
+        canvas.id = "zen-safe-close-gesture-trail";
+        canvas.setAttribute("aria-hidden", "true");
+        canvas.style.cssText = `position:fixed !important; pointer-events:none !important;
+          left:${bounds.left}px !important; top:${bounds.top}px !important;
+          width:${bounds.width}px !important; height:${bounds.height}px !important;
+          margin:0 !important; padding:0 !important; border:0 !important;
+          z-index:2147483647 !important; opacity:0.92 !important;`;
+        const ratio = win.devicePixelRatio || 1;
+        canvas.width = Math.ceil(bounds.width * ratio);
+        canvas.height = Math.ceil(bounds.height * ratio);
+        ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Canvas 2D unavailable");
+        ctx.scale(ratio, ratio);
+        ctx.fillStyle = settings().trailColor;
+        document.documentElement.appendChild(canvas);
+        queued.push(state.start);
+      }
+      // Bound work per frame without accumulating a whole gesture history.
+      if (queued.length >= 128) queued[queued.length - 1] = point(event);
+      else queued.push(point(event));
+      if (frame === null) frame = win.requestAnimationFrame(drawTrail);
+    } catch (error) { clearTrail(); report(error); }
   }
 
   function insideContent(event) {
-    const gb = win.gBrowser;
-    const path = event.composedPath?.() || [];
-    return path.includes(browser()) ||
-      (gb.tabpanels && path.includes(gb.tabpanels)) ||
+    const gb = win.gBrowser, path = event.composedPath?.() || [];
+    return path.includes(browser()) || (gb.tabpanels && path.includes(gb.tabpanels)) ||
       !!gb.tabpanels?.contains?.(event.target);
   }
-
   function sameSource(s) {
-    return enabled() && s.tab.isConnected &&
-      win.gBrowser.selectedTab === s.tab &&
-      s.tab.linkedBrowser === s.browser &&
+    return enabled() && !win.closed && s.tab.isConnected && !s.tab.closing &&
+      win.gBrowser.selectedTab === s.tab && s.tab.linkedBrowser === s.browser &&
       s.browser.currentURI?.spec === s.url;
   }
-
   function hideContextMenu() {
     const popup = document.getElementById("contentAreaContextMenu");
     if (popup?.state === "open" || popup?.state === "showing") popup.hidePopup();
   }
-
   function cancel() {
+    if (state?.gesturing) suppressUntil = now() + settings().menuDelay;
     state = null;
+    clearTrail();
     for (const id of jobs) win.clearTimeout(id);
     jobs.clear();
   }
-
   function down(event) {
-    if (event.button !== 2) {
-      cancel();
-      return;
-    }
-    suppressUntil = 0;
+    if (!event.isTrusted) return;
     cancel();
-    if (!event.isTrusted || !enabled() ||
-        event.ctrlKey || event.altKey || event.metaKey || event.shiftKey ||
-        !insideContent(event) || !fallbackNeeded(browser())) return;
+    syncMenuPref();
+    if (event.button !== 2) return;
+    suppressUntil = 0;
+    if (!event.isTrusted || !enabled() || event.buttons !== 2 ||
+        event.ctrlKey || event.altKey || event.metaKey || event.shiftKey || !insideContent(event)) return;
     const tab = win.gBrowser.selectedTab;
-    state = {
-      tab, browser: browser(), url: browser().currentURI.spec,
-      x: event.screenX, y: event.screenY, chain: "", gesturing: false
-    };
+    state = { tab, browser: browser(), url: browser().currentURI.spec,
+      start: point(event), x: event.screenX, y: event.screenY, chain: "", gesturing: false };
   }
-
   function move(event) {
     const s = state;
     if (!s || !event.isTrusted) return;
-    if (!sameSource(s) || !(event.buttons & 2)) {
-      cancel();
-      return;
-    }
+    if (!sameSource(s) || event.buttons !== 2 || event.ctrlKey ||
+        event.altKey || event.metaKey || event.shiftKey) { cancel(); return; }
     const dx = event.screenX - s.x, dy = event.screenY - s.y;
-    if (Math.max(Math.abs(dx), Math.abs(dy)) < settings().gestureDistance) return;
-    const direction = Math.abs(dx) > Math.abs(dy)
-      ? (dx > 0 ? "R" : "L") : (dy > 0 ? "D" : "U");
-    s.x = event.screenX;
-    s.y = event.screenY;
-    if (!s.chain.endsWith(direction)) s.chain += direction;
-    if ([settings().newGesture, settings().closeGesture].some(value =>
-        value && value.startsWith(s.chain))) s.gesturing = true;
-    if (s.chain.length > 12) s.chain = "INVALID";
-    if (s.gesturing) hideContextMenu();
+    if (Math.max(Math.abs(dx), Math.abs(dy)) >= settings().gestureDistance) {
+      const direction = Math.abs(dx) > Math.abs(dy)
+        ? (dx > 0 ? "R" : "L") : (dy > 0 ? "D" : "U");
+      s.x = event.screenX;
+      s.y = event.screenY;
+      if (!s.chain.endsWith(direction)) s.chain += direction;
+      if (s.chain.length > 12) s.chain = "INVALID";
+      // All drags beyond the threshold are gestures. Invalid strokes never
+      // fall back to a shorter valid prefix or open a stray context menu.
+      s.gesturing = true;
+    }
+    if (s.gesturing) { hideContextMenu(); trail(event); }
   }
-
   function execute(action, s) {
     if (!sameSource(s)) return;
     try {
       if (action === "new") {
         const command = document.getElementById("cmd_newNavigatorTab");
         if (typeof command?.doCommand === "function") command.doCommand();
-        else if (typeof win.BrowserCommands?.openTab === "function") {
-          win.BrowserCommands.openTab();
-        } else {
-          throw new Error("Native new-tab command unavailable");
-        }
+        else if (typeof win.BrowserCommands?.openTab === "function") win.BrowserCommands.openTab();
+        else throw new Error("Native new-tab command unavailable");
       } else {
         if (s.tab === win.gZenWorkspaces?._emptyTab) return;
         if (s.tab.pinned && settings().protectPinned) api.closePinned([s.tab]);
         else win.gBrowser.removeTab(s.tab, { animate: true });
       }
-    } catch (error) {
-      Components.utils.reportError("[ZenArcMod gestures] " + error);
-    }
+    } catch (error) { report(error); }
   }
-
   function up(event) {
-    if (event.button !== 2 || !event.isTrusted) return;
+    if (event.button !== 2 || !event.isTrusted || !state) return;
+    move({ isTrusted: true, buttons: 2, screenX: event.screenX, screenY: event.screenY,
+      ctrlKey: event.ctrlKey, altKey: event.altKey, metaKey: event.metaKey, shiftKey: event.shiftKey });
     const s = state;
-    if (!s) return;
-    move({ ...event,
-      isTrusted: true, buttons: 2,
-      screenX: event.screenX, screenY: event.screenY
-    });
     state = null;
-    if (!sameSource(s)) return;
+    clearTrail();
+    if (!s || !sameSource(s)) return;
     if (s.gesturing) {
       suppressUntil = now() + settings().menuDelay;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      hideContextMenu();
+      event.preventDefault(); event.stopImmediatePropagation(); hideContextMenu();
     }
     const action = settings().newGesture && s.chain === settings().newGesture ? "new" :
       settings().closeGesture && s.chain === settings().closeGesture ? "close" : null;
     if (!action) return;
-    const id = win.setTimeout(() => {
-      jobs.delete(id);
-      execute(action, s);
-    }, 0);
+    const id = win.setTimeout(() => { jobs.delete(id); execute(action, s); }, 0);
     jobs.add(id);
   }
-
   function context(event) {
-    if (!event.isTrusted || !enabled()) return;
+    if (!event.isTrusted || event.button !== 2 || !enabled() || !insideContent(event)) return;
     if (state?.gesturing || now() < suppressUntil) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
+      event.preventDefault(); event.stopImmediatePropagation();
     }
   }
-
-  function key(event) {
-    if (event.key === "Escape") cancel();
-  }
-
-  function blur(event) {
-    if (event.target === win) cancel();
-  }
-
-  function changed() { cancel(); suppressUntil = 0; }
+  function key(event) { if (event.key === "Escape") cancel(); }
+  function blur(event) { if (event.target === win) cancel(); }
+  function changed() { cancel(); syncMenuPref(); }
   const handlers = [
     ["ZenSafeCloseConfigChanged", changed],
     ["mousedown", down], ["mousemove", move], ["mouseup", up],
     ["contextmenu", context], ["keydown", key], ["blur", blur],
-    ["TabSelect", cancel]
+    ["TabSelect", cancel], ["resize", cancel], ["sizemodechange", cancel]
   ];
-  for (const [name, handler] of handlers) {
-    win.addEventListener(name, handler, true);
-  }
+  for (const [name, handler] of handlers) win.addEventListener(name, handler, true);
+  // Leaving the window cancels even if mouse-up subsequently happens in another app.
+  function leave(event) { if (!event.relatedTarget) cancel(); }
+  document.documentElement.addEventListener("mouseleave", leave, true);
 
   const originalUninstall = api.uninstall;
   function destroy() {
     if (stopped) return;
     stopped = true;
     cancel();
-    suppressUntil = 0;
-    for (const id of jobs) win.clearTimeout(id);
-    jobs.clear();
-    for (const [name, handler] of handlers) {
-      win.removeEventListener(name, handler, true);
-    }
+    syncMenuPref();
+    for (const [name, handler] of handlers) win.removeEventListener(name, handler, true);
+    document.documentElement.removeEventListener("mouseleave", leave, true);
     win.removeEventListener("unload", destroy);
     if (api.uninstall === combinedUninstall) api.uninstall = originalUninstall;
-    if (win.__zenSafeCloseSystemGestures?.destroy === destroy) {
-      delete win.__zenSafeCloseSystemGestures;
-    }
+    if (win.__zenSafeCloseGestures?.destroy === destroy) delete win.__zenSafeCloseGestures;
+    if (win.__zenSafeCloseSystemGestures?.destroy === destroy) delete win.__zenSafeCloseSystemGestures;
   }
-
-  function combinedUninstall() {
-    destroy();
-    return originalUninstall.call(api);
-  }
-
+  function combinedUninstall() { destroy(); return originalUninstall.call(api); }
   api.uninstall = combinedUninstall;
-  if (typeof win.addUnloadListener === "function") {
-    win.addUnloadListener(combinedUninstall);
-  }
+  if (typeof win.addUnloadListener === "function") win.addUnloadListener(combinedUninstall);
   win.addEventListener("unload", destroy, { once: true });
-  win.__zenSafeCloseSystemGestures = {
-    destroy,
-    get status() {
-      return { enabled: enabled(), fallbackHere: fallbackNeeded(browser()),
-        gesture: state?.chain || "", threshold: settings().gestureDistance };
-    }
+  const gestureAPI = { destroy,
+    get status() { return { enabled: enabled(), scope: "all-tab-content",
+      gesture: state?.chain || "", threshold: settings().gestureDistance, lastError }; }
   };
+  win.__zenSafeCloseGestures = gestureAPI;
+  // Keep the old diagnostic entry point working for existing installations.
+  win.__zenSafeCloseSystemGestures = gestureAPI;
+  syncMenuPref();
 })();
-
