@@ -161,6 +161,16 @@
   },
   {
     "type": "separator",
+    "label": "Session restore"
+  },
+  {
+    "property": "zen-safe-close.rememberLoadedTabs",
+    "type": "checkbox",
+    "label": "Remember loaded tabs across browser restarts",
+    "defaultValue": false
+  },
+  {
+    "type": "separator",
     "label": "Folder visibility"
   },
   {
