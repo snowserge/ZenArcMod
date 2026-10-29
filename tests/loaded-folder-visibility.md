@@ -75,3 +75,29 @@ On macOS and Windows with Zen 1.23.4b or the user's current version:
 These are simulated-object regression tests, not live Gecko rendering or
 native input verification. Actual folder spacing, drag behavior, browser update
 compatibility and cross-platform integration remain to be checked in Zen.
+
+## Scroll stability fix (2.3.1)
+
+Refresh reconciles existing visibility attributes in place. It no longer removes
+container/start/hidden attributes from every managed node before re-adding them: 
+that transient layout could reveal pending rows, shrink the scroll range or
+change Gecko's scroll anchor while layout/animation reads force a flush.
+Native scroll anchoring is excluded from the managed tab-list subtree.
+
+On expand/collapse, the module snapshots scrollable header ancestors plus the
+workspace/arrowscrollbox containers and preserves the visible header position
+synchronously and for at most two animation frames. A newer toggle supersedes
+the old snapshot. Wheel, touch, pointer/mouse down, key input, tab selection, blur,
+workspace change, option disable or teardown cancels deferred correction. No
+focus or scrollIntoView call is used. Native scroll limits can constrain exact
+position preservation when collapsing content near the bottom of the sidebar.
+
+Tests cover stable attributes, simulated scroll drift during cache invalidation,
+deferred restoration, user-input cancellation, replacement, workspace changes
+and teardown. Against 2.3.0, stable-attribute and position-preservation regression
+cases fail. These simulations do not reproduce Gecko's rendering engine.
+
+Live check: scroll the sidebar well below the top, expand/collapse a folder with
+loaded and pending tabs several times, and confirm its header stays reachable.
+Repeat for a nested folder, a header near the viewport bottom, each density,
+workspace switching and immediate manual wheel/keyboard scrolling after a toggle.
