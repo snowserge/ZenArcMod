@@ -161,6 +161,16 @@
   },
   {
     "type": "separator",
+    "label": "Folder visibility"
+  },
+  {
+    "property": "zen-safe-close.showLoadedInFolders",
+    "type": "checkbox",
+    "label": "Always show loaded tabs in collapsed folders",
+    "defaultValue": false
+  },
+  {
+    "type": "separator",
     "label": "Mouse gestures on all pages"
   },
   {
