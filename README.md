@@ -32,7 +32,7 @@ Disable Gesturefy (and any other mouse gesture extension) before enabling this m
 1. Back up the existing `chrome/sine-mods/zen-safe-close` folder and `chrome/sine-mods/mods.json`.
 2. Disable the existing ZenArcMod entry and restart Zen so its old hooks are removed.
 3. Install this repository through Sine. It uses the same stable mod ID, `zen-safe-close`.
-4. Restart Zen and confirm the card shows version 2.4.0 and a Configure button.
+4. Restart Zen and confirm the card shows version 2.4.1 and a Configure button.
 5. Enable updates for the mod in Sine. Existing `zen-safe-close.*` preferences remain in the browser profile.
 
 Do not run an older AutoConfig/userChrome copy alongside the Sine mod.
@@ -52,7 +52,7 @@ normal contents. Restoring/unloading a tab updates its visibility automatically.
 The option does not load or unload tabs. While enabled it uses immediate folder
 layout rather than native collapse animations, and keeps folder collapsed flags
 unchanged. Folder toggles preserve the clicked header position; wheel, keyboard
-or pointer input immediately cancels the brief scroll correction. Turning the
+or pointer input immediately cancels the event-driven header anchoring. Turning the
 option off restores native visibility based on current selection.
 The overall workspace pinned-section toggle remains native. See
 [folder visibility verification](tests/loaded-folder-visibility.md) for checks.
@@ -64,7 +64,8 @@ on-demand tab restore, then reloads only previously loaded restored tabs on
 subsequent launches. It does not create duplicate tabs or change selection.
 The policy applies to pinned and ordinary tabs and is independent of folder
 visibility. Enable **Always show loaded tabs in collapsed folders** as well if
-you want those rows visible in collapsed folders after they finish restoring.
+you want all remembered rows visible together while pages restore in the background.
+Their visibility no longer waits for their turn in the network restore queue.
 Turning session memory off restores the saved startup/restore preferences
 (unless externally changed) and removes markers on open tabs. Private windows
 are excluded. Pages load again; this does not preserve their live JavaScript

@@ -76,7 +76,7 @@ These are simulated-object regression tests, not live Gecko rendering or
 native input verification. Actual folder spacing, drag behavior, browser update
 compatibility and cross-platform integration remain to be checked in Zen.
 
-## Scroll stability fix (2.3.1)
+## Initial scroll stability fix (2.3.1; superseded by 2.4.1)
 
 Refresh reconciles existing visibility attributes in place. It no longer removes
 container/start/hidden attributes from every managed node before re-adding them: 
@@ -101,3 +101,48 @@ Live check: scroll the sidebar well below the top, expand/collapse a folder with
 loaded and pending tabs several times, and confirm its header stays reachable.
 Repeat for a nested folder, a header near the viewport bottom, each density,
 workspace switching and immediate manual wheel/keyboard scrolling after a toggle.
+
+## Asynchronous layout stabilization (2.4.1)
+
+The two-frame correction was insufficient for deferred native scrolling and
+background session restore. It was also cancelled by unrelated animateSelect/
+animateUnload calls. Header anchoring now remains event-driven until newer
+user input/context, instead of expiring after two frames. Scroll listeners
+on the actual scrollers and ResizeObserver callbacks trigger a new pass when
+late layout/scrolling occurs; there is no endless animation-frame polling.
+Wheel/touch/pointer/key input, selection, blur, resizing, workspace changes and
+teardown still cancel the held header. Other redraws preserve a currently
+visible header for the duration of that redraw.
+
+Actual workspace/arrowscrollbox shadow scrollers receive an owned inline
+overflow-anchor override, restored on disable/removal. A document selector
+cannot cross that shadow boundary. Position correction uses instant scrollTo,
+so CSS smooth scrolling cannot defer it past the correction window. Disconnected
+scrollers release their listeners/styles.
+
+Unchanged row nodes are cleaned once on ownership acquisition, preserving native
+indentation. Late inline opacity/height/min-height writes mark only that node
+dirty for cleanup. Ordinary refreshes no longer repeatedly read/cancel every
+row's animations or erase its indentation. Mode disable clears ownership caches.
+
+Saved-loaded pending tabs count as visible while session memory restores them.
+The session API is initialized before folder layout and publishes intent changes;
+real pending attributes are not altered. Tests run session and folder modules
+together on one simulated window, with twelve remembered rows in three folders,
+queued loads, explicit discard, timeouts and seeded event interleavings.
+
+Source review included Zen's
+[workspace scrollbox](https://github.com/zen-browser/desktop/blob/541ee55196395ee8082862b83c84c90ab41d9f6d/src/zen/spaces/ZenSpace.mjs)
+and Firefox's [arrowscrollbox implementation](https://github.com/mozilla-firefox/firefox/blob/main/toolkit/content/widgets/arrowscrollbox.js),
+which owns a shadow scrollbox and defers ensureElementIsVisible via RAF.
+
+The late-scroll, unrelated-callback, shadow-scroller and indentation regression
+cases fail against 2.4.0, as does immediate startup-row presentation. The test
+geometry, native events and SessionStore remain simulated. A fresh attempt to
+connect to the real Zen application timed out, so no live browser validation
+is claimed. Manual follow-up should include slow/offline startup, expanding a
+folder while other remembered tabs restore, delayed smooth scrolling, nested
+folders, repeated toggles and immediate wheel/keyboard navigation on both OSes.
+
+Diagnostics available in window.__zenSafeClose.status include folderLayout and
+sessionMemory counters, with no tab titles or URLs.

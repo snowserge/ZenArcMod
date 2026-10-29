@@ -1,84 +1,6 @@
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-const { test } = require('node:test');
-const source = fs.readFileSync(process.env.ZSC_FOLDER_SOURCE || path.join(__dirname, '../zen-safe-close.uc.js'), 'utf8');
-const start = source.lastIndexOf('(() => {', source.indexOf('const FLAG = "data-zsc-loaded-folders"'));
-const code = source.slice(start, source.indexOf('\n(() => {', start + 1));
-const HIDE = 'data-zsc-folder-hidden';
-function node(localName) {
-  const attrs = new Set(), props = new Map();
-  return { localName, attrs, isConnected: true, group: null,
-    style: { setProperty: (k,v) => props.set(k,v), removeProperty: k => props.delete(k), props },
-    setAttribute: name => attrs.add(name), removeAttribute: name => attrs.delete(name),
-    hasAttribute: name => attrs.has(name),
-    toggleAttribute(name, value) { if (value) attrs.add(name); else attrs.delete(name); },
-    getAnimations: () => [], closest: () => null,
-    remove() { this.isConnected = false; } };
-}
-function setup(on = true, available = true) {
-  const folders = [], listeners = new Map(), frames = new Map(), originals = {}, calls = [];
-  let id = 0, observer, invalidations = 0;
-  function folder(parent = null) {
-    const f = node('zen-folder'); f.group = parent; f.collapsed = true; f.direct = [];
-    f.groupContainer = node('div'); f.groupStartElement = node('div');
-    f.labelElement = { parentElement: node('hbox') }; f._activeTabs = [];
-    Object.defineProperty(f, 'tabs', { get() {
-      return [...f.direct, ...folders.filter(x => x.group === f).flatMap(x => x.tabs)];
-    } });
-    Object.defineProperty(f, 'activeTabs', { get: () => f._activeTabs, set(value) {
-      f._activeTabs = value;
-      for (const t of value) t.setAttribute('folder-active','true');
-    } });
-    folders.push(f); return f;
-  }
-  function tab(f, pending = false, empty = false) {
-    const t = node('tab'); t.group = f;
-    t.toggleAttribute('pending',pending); t.toggleAttribute('zen-empty-tab',empty);
-    f.direct.push(t);
-    Object.defineProperty(t,'visible',{get() {
-      for (let g=t.group;g;g=g.group) if (g.collapsed && !g.activeTabs.includes(t)) return false;
-      return true;
-    }});
-    return t;
-  }
-  const manager = { updateFolderIcon(f) { f.iconActive = f.collapsed && f.hasAttribute('has-active'); } };
-  for (const name of ['animateCollapse','animateExpand','animateSelect','animateUnload','animateUnloadAll']) {
-    originals[name] = manager[name] = function(f, ...args) {
-      calls.push({name,f,args});
-      if (f.localName === 'zen-folder' && ['animateCollapse','animateExpand'].includes(name)) {
-        f.activeTabs = f.collapsed ? f.tabs.filter(t => t.selected) : [];
-        f.toggleAttribute('has-active', f.activeTabs.length > 0);
-      }
-      return Promise.resolve('native');
-    };
-  }
-  const root = node('window'); root.appendChild = () => {};
-  const api = { config: { enabled: true, showLoadedInFolders: on }, uninstall() {} };
-  const window = { __zenSafeClose: api,
-    gBrowser: { tabContainer: { querySelectorAll: () => folders,
-      _invalidateCachedVisibleTabs() { invalidations++; } } },
-    gZenFolders: available ? manager : undefined,
-    addEventListener(type,fn) { if (!listeners.has(type)) listeners.set(type,new Set()); listeners.get(type).add(fn); },
-    removeEventListener(type,fn) { const set=listeners.get(type);set?.delete(fn);if (!set?.size) listeners.delete(type); },
-    getComputedStyle: () => ({overflowY: "auto"}),
-    requestAnimationFrame(fn) { const n=++id;frames.set(n,fn);return n; },
-    cancelAnimationFrame(n) { frames.delete(n); } };
-  const errors = [];
-  class MutationObserver {
-    constructor(callback) { this.callback=callback; observer=this; }
-    observe() {} disconnect() { this.disconnected=true; }
-  }
-  vm.runInNewContext(code,{window,document:{documentElement:root,createElementNS:()=>node('style')},
-    MutationObserver,Components:{utils:{reportError:e=>errors.push(e)}}});
-  const refresh=()=>window.__zenSafeCloseLoadedFolders.refresh();
-  function flush() {const work=[...frames.values()];frames.clear();work.forEach(fn=>fn());}
-  function fire(type) { for (const fn of [...(listeners.get(type)||[])]) fn({type}); }
-  return { folder,tab,folders,api,manager,originals,calls,root,window,errors,frames,listeners,fire,
-    refresh,flush,get observer(){return observer;},
-    change(value) {api.config.showLoadedInFolders=value;fire('ZenSafeCloseConfigChanged');} };
-}
+const assert=require('node:assert/strict');
+const {test}=require('node:test');
+const {setup,node,code,HIDE}=require('./helpers/loaded-folders.cjs');
 
 test('off by default delegates to native methods and leaves rows untouched',async()=>{
   const h=setup(false),f=h.folder(),t=h.tab(f);h.refresh();
@@ -221,4 +143,60 @@ test('opening a folder that first makes the sidebar scrollable keeps its visible
   h.window.gBrowser.tabContainer._invalidateCachedVisibleTabs=()=>{box.scrollHeight=1800;box.scrollTop=180;};
   f.collapsed=false;await h.manager.animateExpand(f);assert.equal(box.scrollTop,0);
   h.flush();h.flush();assert.equal(header.getBoundingClientRect().top,100);
+});
+
+test('late native scrolling after many frames still preserves the clicked header without polling',async()=>{
+  const h=setup(),f=h.folder();h.tab(f);h.refresh();const {box,header}=attachScroller(h,f);
+  await h.manager.animateExpand(f);for(let i=0;i<12;i++)h.flush();assert.equal(h.frames.size,0);
+  box.scrollTop=430;box.emit('scroll');h.flush();assert.equal(box.scrollTop,240);
+  assert.equal(header.getBoundingClientRect().top,260);
+  h.fire('wheel');box.scrollTop=520;box.emit('scroll');h.flush();assert.equal(box.scrollTop,520);
+});
+test('unrelated native selection/unload callbacks do not cancel the clicked-header anchor',async()=>{
+  const h=setup(),f=h.folder();h.tab(f);h.refresh();const {box}=attachScroller(h,f);
+  await h.manager.animateExpand(f);h.flush();h.flush();
+  await h.manager.animateSelect(f);await h.manager.animateUnload(f);
+  box.scrollTop=430;box.emit('scroll');h.flush();assert.equal(box.scrollTop,240);
+});
+test('shadow scroller owns anchoring and uses instant scrollTo rather than CSS smooth assignment',async()=>{
+  const h=setup(),f=h.folder();h.tab(f);h.refresh();const {box,header}=attachScroller(h,f);
+  header.parentElement=null;h.window.gZenWorkspaces.activeScrollbox={scrollbox:box};
+  const calls=[];box.scrollTo=options=>{calls.push(options);box.scrollTop=options.top;box.scrollLeft=options.left;box.emit('scroll');};
+  await h.manager.animateExpand(f);h.flush();h.flush();
+  assert.equal(box.style.getPropertyValue('overflow-anchor'),'none');
+  box.scrollTop=480;box.scrollLeft=60;box.emit('scroll');h.flush();h.flush();
+  assert.equal(box.scrollTop,240);assert.equal(box.scrollLeft,7);
+  assert(calls.length);assert(calls.every(x=>x.behavior==='instant'));
+  h.api.uninstall();assert.equal(box.listenerCount('scroll'),0);assert.equal(box.style.getPropertyValue('overflow-anchor'),'');
+});
+test('late folder ResizeObserver updates preserve the header through content growth',async()=>{
+  let sizes;class ResizeObserver {constructor(fn){this.fn=fn;sizes=this;}observe(){}unobserve(){}disconnect(){this.disconnected=true;}}
+  const h=setup(true,true,{ResizeObserver}),f=h.folder();h.tab(f);h.refresh();const {box,header}=attachScroller(h,f);
+  let contentTop=500;header.getBoundingClientRect=()=>({top:contentTop-box.scrollTop,bottom:contentTop+32-box.scrollTop});
+  await h.manager.animateExpand(f);h.flush();h.flush();contentTop+=90;sizes.fn();h.flush();
+  assert.equal(box.scrollTop,330);assert.equal(header.getBoundingClientRect().top,260);
+  h.api.uninstall();assert(sizes.disconnected);
+});
+test('stable rendering preserves indentation and does not repeatedly cancel native transitions',()=>{
+  const h=setup(),f=h.folder(),t=h.tab(f);let reads=0;
+  t.style.setProperty('--zen-folder-indent','14px');t.getAnimations=()=>{reads++;return[];};
+  h.refresh();h.refresh();h.refresh();
+  assert.equal(t.style.getPropertyValue('--zen-folder-indent'),'14px');assert.equal(reads,1);
+  h.change(false);t.style.setProperty('opacity','0');h.change(true);
+  assert.equal(t.style.getPropertyValue('opacity'),'');
+});
+
+test('late native row styles are cleaned selectively without erasing indentation',()=>{
+  const h=setup(),f=h.folder(),t=h.tab(f);h.refresh();
+  t.style.setProperty('--zen-folder-indent','14px');t.style.setProperty('opacity','0');t.style.setProperty('height','0px');
+  h.observer.callback([{type:'attributes',attributeName:'style',target:t}]);h.flush();
+  assert.equal(t.style.getPropertyValue('opacity'),'');assert.equal(t.style.getPropertyValue('height'),'');
+  assert.equal(t.style.getPropertyValue('--zen-folder-indent'),'14px');
+});
+test('disconnected workspace scrollers release anchoring styles and scroll listeners',async()=>{
+  const h=setup(),f=h.folder();h.tab(f);h.refresh();const {box,header}=attachScroller(h,f);
+  await h.manager.animateExpand(f);h.flush();h.flush();
+  box.isConnected=false;header.isConnected=false;f.isConnected=false;h.refresh();
+  assert.equal(box.style.getPropertyValue('overflow-anchor'),'');assert.equal(box.listenerCount('scroll'),0);
+  assert.equal(h.window.__zenSafeCloseLoadedFolders.status.scrollers,0);
 });
