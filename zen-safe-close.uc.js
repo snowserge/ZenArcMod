@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           ZenArcMod
-// @version        2.3.1
+// @version        2.4.0
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,7 +9,7 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.3.1";
+  const VERSION = "2.4.0";
   const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {
@@ -19,7 +19,7 @@
   let disposed = false, quitting = false, installed = false;
   let lastError = "", cancelLanding = null;
   const PREFIX = "zen-safe-close.";
-  const DEFAULTS = {"enabled":true,"protectPinned":true,"emptyScreen":true,"neutralFocus":true,"preserveScroll":true,"hideClose":true,"hideUnload":false,"visuals":true,"includeFolders":true,"inactive":"unloaded","effect":"sepia","opacity":"1","strength":"1","saturation":"0.6","gestures":true,"newGesture":"D","closeGesture":"DR","gestureDistance":"24","settleTime":"200","menuDelay":"500","visualScope":"pinned","density":"roomy","showLoadedInFolders":false,"trail":true,"trailColor":"#168f85","trailWidth":"12"};
+  const DEFAULTS = {"enabled":true,"protectPinned":true,"emptyScreen":true,"neutralFocus":true,"preserveScroll":true,"hideClose":true,"hideUnload":false,"visuals":true,"includeFolders":true,"inactive":"unloaded","effect":"sepia","opacity":"1","strength":"1","saturation":"0.6","gestures":true,"newGesture":"D","closeGesture":"DR","gestureDistance":"24","settleTime":"200","menuDelay":"500","visualScope":"pinned","density":"roomy","showLoadedInFolders":false,"rememberLoadedTabs":false,"trail":true,"trailColor":"#168f85","trailWidth":"12"};
   let config = {}, configRevision = 0, configErrors = [];
   let onConfigChanged = () => {};
   function readConfig() {
@@ -723,6 +723,231 @@
   win.addEventListener("unload", destroy, { once: true });
   win.__zenSafeCloseLoadedFolders = { refresh, destroy };
   refresh();
+})();
+
+(() => {
+  "use strict";
+  const win = window, api = win.__zenSafeClose;
+  if (!api || !win.gBrowser) return;
+  win.__zenSafeCloseSessionMemory?.destroy();
+  const KEY = "zen-safe-close.loaded.v1";
+  const BACKUP = "zen-safe-close-internal.sessionRestorePolicy";
+  const POLICY = { "browser.startup.page": 3, "browser.sessionstore.restore_on_demand": true,
+    "browser.sessionstore.restore_pinned_tabs_on_demand": true };
+  const readPolicy = name => typeof POLICY[name] === "boolean"
+    ? Services.prefs.getBoolPref(name, false) : Services.prefs.getIntPref(name, 1);
+  const setPolicy = (name, value) => typeof POLICY[name] === "boolean"
+    ? Services.prefs.setBoolPref(name, value) : Services.prefs.setIntPref(name, value);
+  let stopped = false, quitting = false, ready = false, busy = false, active = false;
+  let timer = null, epoch = 0, owner = false, lastError = "";
+  const seen = new Set(), queue = [], intended = new Set(), requests = new Map();
+  const initialResume = !!api.config.rememberLoadedTabs;
+  let resumeExisting = initialResume;
+  let ss, privateWindow;
+  try {
+    ss = win.SessionStore || ChromeUtils.importESModule("resource:///modules/sessionstore/SessionStore.sys.mjs").SessionStore;
+    privateWindow = ChromeUtils.importESModule("resource://gre/modules/PrivateBrowsingUtils.sys.mjs")
+      .PrivateBrowsingUtils.isWindowPrivate(win);
+  } catch (error) { Components.utils.reportError("[ZenArcMod session] " + error); return; }
+  // Never write private browsing metadata or change policy from a private window.
+  if (privateWindow) return;
+  const host = Services.appShell.hiddenDOMWindow;
+  const shared = host.__zenSafeCloseSessionOwners ||= { owners: new Set(), restoreTimer: null };
+  const enabled = () => !stopped && api.config.enabled && api.config.rememberLoadedTabs;
+  function report(error) { lastError = String(error); Components.utils.reportError("[ZenArcMod session] " + lastError); }
+  const eligible = tab => tab?.isConnected && !tab.closing && !tab.hasAttribute("zen-empty-tab") &&
+    !tab.hasAttribute("glance-id") && !tab.hasAttribute("zen-glance-tab");
+  function write(tab, value) {
+    if (eligible(tab) && ss.getCustomTabValue(tab, KEY) !== value) ss.setCustomTabValue(tab, KEY, value);
+  }
+  function restorePolicy() {
+    if (shared.owners.size) return;
+    const raw = Services.prefs.getStringPref(BACKUP, "");
+    if (!raw) return;
+    try {
+      const saved = JSON.parse(raw);
+      for (const name of Object.keys(POLICY)) {
+        const entry = saved[name];
+        if (!entry || typeof entry.value !== typeof POLICY[name] || typeof entry.hadUser !== "boolean") throw new Error("Invalid restore-policy backup");
+      }
+      for (const name of Object.keys(POLICY)) {
+        // Don't overwrite a newer external preference change.
+        if (readPolicy(name) !== POLICY[name]) continue;
+        if (saved[name].hadUser) setPolicy(name, saved[name].value);
+        else Services.prefs.clearUserPref(name);
+      }
+      Services.prefs.clearUserPref(BACKUP);
+    } catch (error) { report(error); }
+  }
+  function acquirePolicy() {
+    if (owner) return true;
+    if (shared.restoreTimer !== null) { host.clearTimeout(shared.restoreTimer); shared.restoreTimer = null; }
+    try {
+      let raw = Services.prefs.getStringPref(BACKUP, "");
+      if (!raw) {
+        const saved = {};
+        for (const name of Object.keys(POLICY)) saved[name] = { hadUser: Services.prefs.prefHasUserValue(name),
+          value: readPolicy(name) };
+        Services.prefs.setStringPref(BACKUP, JSON.stringify(saved));
+      } else {
+        const saved = JSON.parse(raw);
+        if (Object.keys(POLICY).some(name => typeof saved[name]?.value !== typeof POLICY[name] || typeof saved[name]?.hadUser !== "boolean")) throw new Error("Invalid restore-policy backup");
+      }
+      // Persist while the option is on, including across shutdown: SessionStore
+      // reads these before a Sine window script can run on the next launch.
+      for (const name of Object.keys(POLICY)) setPolicy(name, POLICY[name]);
+      shared.owners.add(win); owner = true; return true;
+    } catch (error) { report(error); restorePolicy(); return false; }
+  }
+  function releasePolicy(preserve) {
+    if (!owner) return;
+    shared.owners.delete(win); owner = false;
+    if (!preserve && !shared.owners.size && shared.restoreTimer === null) {
+      // A same-turn Sine hot reload can reacquire ownership before restoring
+      // policy; avoid briefly letting native queues load all sleeping tabs.
+      shared.restoreTimer = host.setTimeout(() => { shared.restoreTimer = null; restorePolicy(); }, 0);
+    }
+  }
+  function cancelRequests() {
+    epoch++;
+    if (timer !== null) win.clearTimeout(timer);
+    timer = null;
+    queue.length = 0;
+    for (const request of requests.values()) win.clearTimeout(request.timer);
+    requests.clear(); intended.clear();
+  }
+  function schedule() {
+    if (!stopped && timer === null) timer = win.setTimeout(() => { timer = null; scan(); pump(); }, 0);
+  }
+  function finish(tab) {
+    const request = requests.get(tab);
+    if (request) { win.clearTimeout(request.timer); requests.delete(tab); }
+    if (!tab.hasAttribute("pending")) intended.delete(tab);
+    schedule();
+  }
+  function pump() {
+    if (!active || !enabled() || !ready || api.status?.installed === false || busy || quitting || win.closed) return;
+    while (requests.size < 2 && queue.length) {
+      const tab = queue.shift();
+      if (!eligible(tab) || !intended.has(tab) || !tab.hasAttribute("pending")) continue;
+      const generation = epoch;
+      const request = { timer: win.setTimeout(() => {
+        if (generation !== epoch) return;
+        requests.delete(tab);
+        // Keep the saved intention on a failed/slow load, rather than replacing
+        // it with startup's temporary pending state. No automatic retry loop.
+        schedule();
+      }, 20000) };
+      requests.set(tab, request);
+      try {
+        // Firefox's lazy-browser reload waits for SSTabRestoring before reloading
+        // the saved session-history entry. It does not select/create a tab.
+        win.gBrowser.getBrowserForTab(tab).reload();
+      } catch (error) {
+        win.clearTimeout(request.timer); requests.delete(tab); report(error);
+      }
+    }
+  }
+  function scan() {
+    if (!active || !enabled() || !ready || api.status?.installed === false || busy || quitting || win.closed) return;
+    const tabs = Array.from(win.gBrowser.tabs || []).filter(eligible);
+    for (const tab of tabs) {
+      if (!seen.has(tab)) {
+        seen.add(tab);
+        if (resumeExisting && ss.getCustomTabValue(tab, KEY) === "1" && tab.hasAttribute("pending")) {
+          intended.add(tab); queue.push(tab);
+        }
+      }
+      const value = tab.hasAttribute("pending") ? "0" : "1";
+      // Restoring tabs are pending temporarily. Preserve their previous intent
+      // until completion or an explicit discard by the user/browser.
+      write(tab, intended.has(tab) && value === "0" ? "1" : value);
+      if (value === "1") intended.delete(tab);
+    }
+    for (const tab of seen) if (!tabs.includes(tab)) { seen.delete(tab); intended.delete(tab); finishRemoved(tab); }
+  }
+  function finishRemoved(tab) {
+    const request = requests.get(tab);
+    if (request) { win.clearTimeout(request.timer); requests.delete(tab); }
+  }
+  function refresh() {
+    if (enabled()) {
+      if (!acquirePolicy()) return;
+      if (!active) { active = true; seen.clear(); }
+      if (ready) schedule();
+    } else {
+      const wasActive = active;
+      active = false; resumeExisting = false;
+      cancelRequests(); seen.clear(); releasePolicy(false);
+      if (!owner && !shared.owners.size && shared.restoreTimer === null) restorePolicy();
+      if (wasActive && ready) for (const tab of win.gBrowser.tabs || []) {
+        try { ss.deleteCustomTabValue(tab, KEY); } catch (error) { report(error); }
+      }
+    }
+  }
+  function restored(event) {
+    const tab = event.target;
+    if (!eligible(tab)) return;
+    if (active && ready && api.status?.installed !== false && !busy && !quitting && !win.closed && !tab.hasAttribute("pending")) {
+      intended.delete(tab); write(tab, "1"); finish(tab);
+    }
+    schedule();
+  }
+  function restoring(event) {
+    // SessionStore may replace custom values after TabOpen. Re-read the restored
+    // value once history is ready; a request already in flight must not queue twice.
+    const tab = event.target;
+    if (!requests.has(tab) && !intended.has(tab)) seen.delete(tab);
+    schedule();
+  }
+  function discarded(event) {
+    const tab = event.target;
+    if (!active || !ready || !eligible(tab)) return;
+    intended.delete(tab); seen.add(tab); finishRemoved(tab);
+    write(tab, "0"); schedule();
+  }
+  const handlers = [
+    ["ZenSafeCloseConfigChanged", refresh], ["TabOpen", schedule], ["TabClose", schedule],
+    ["SSTabRestoring", restoring], ["SSTabRestored", restored], ["TabSelect", schedule],
+    ["TabBrowserDiscarded", discarded],
+    ["SSWindowStateBusy", () => { busy = true; }],
+    ["SSWindowStateReady", () => { busy = false; schedule(); }]
+  ];
+  for (const [type, fn] of handlers) win.addEventListener(type, fn, true);
+  const observer = new MutationObserver(records => { if (records.some(r => r.type === "attributes")) schedule(); });
+  observer.observe(win.gBrowser.tabContainer, { subtree: true, attributes: true, attributeFilter: ["pending"] });
+  const quitObserver = { observe() {
+    // Metadata is normally updated live. Snapshot before shutdown tears browsers
+    // down, while retaining intentions for any unfinished startup loads.
+    scan(); quitting = true; cancelRequests();
+  } };
+  Services.obs.addObserver(quitObserver, "quit-application-granted");
+  const originalUninstall = api.uninstall;
+  function destroy(closingWindow = false) {
+    if (stopped) return;
+    const preserve = closingWindow || quitting || win.closed;
+    if (preserve) scan();
+    stopped = true; active = false; cancelRequests();
+    observer.disconnect();
+    for (const [type, fn] of handlers) win.removeEventListener(type, fn, true);
+    Services.obs.removeObserver(quitObserver, "quit-application-granted");
+    win.removeEventListener("unload", unload);
+    releasePolicy(preserve);
+    if (api.uninstall === combinedUninstall) api.uninstall = originalUninstall;
+    if (win.__zenSafeCloseSessionMemory?.destroy === destroy) delete win.__zenSafeCloseSessionMemory;
+  }
+  function unload() { destroy(true); }
+  function combinedUninstall() { destroy(); return originalUninstall.call(api); }
+  api.uninstall = combinedUninstall;
+  if (typeof win.addUnloadListener === "function") win.addUnloadListener(combinedUninstall);
+  win.addEventListener("unload", unload, { once: true });
+  win.__zenSafeCloseSessionMemory = { destroy,
+    get status() { return { active, ready, queued: queue.length, restoring: requests.size, lastError }; } };
+  refresh();
+  Promise.resolve(ss.promiseAllWindowsRestored || ss.promiseInitialized).then(() => {
+    if (stopped) return;
+    ready = true; refresh();
+  }).catch(report);
 })();
 
 (() => {

@@ -11,6 +11,7 @@ Sine JavaScript mod for Zen Browser. No Node.js is required to install or run it
 - Sepia or grayscale for unloaded pinned tabs, including pinned tabs inside folders.
 - Configurable visual scope: pinned only by default; all tabs optionally.
 - Optional loaded-tab visibility: keep all loaded tabs visible in every collapsed folder, including nested folders, independently of the selected tab.
+- Optional session memory: remember which existing tabs were loaded and resume those pages in the background after restart.
 - Live tab density: Roomy (native), Cosy (32px plus margins), Compact (28px).
 - Right-button gestures on all tab content, including websites, settings, system pages and PDFs: Down = new tab; Down then Right = close/unload.
 - A teal mouse trail that grows with travelled distance, with configurable color and maximum width.
@@ -31,7 +32,7 @@ Disable Gesturefy (and any other mouse gesture extension) before enabling this m
 1. Back up the existing `chrome/sine-mods/zen-safe-close` folder and `chrome/sine-mods/mods.json`.
 2. Disable the existing ZenArcMod entry and restart Zen so its old hooks are removed.
 3. Install this repository through Sine. It uses the same stable mod ID, `zen-safe-close`.
-4. Restart Zen and confirm the card shows version 2.3.1 and a Configure button.
+4. Restart Zen and confirm the card shows version 2.4.0 and a Configure button.
 5. Enable updates for the mod in Sine. Existing `zen-safe-close.*` preferences remain in the browser profile.
 
 Do not run an older AutoConfig/userChrome copy alongside the Sine mod.
@@ -56,6 +57,19 @@ option off restores native visibility based on current selection.
 The overall workspace pinned-section toggle remains native. See
 [folder visibility verification](tests/loaded-folder-visibility.md) for checks.
 
+Under **Session restore**, enable **Remember loaded tabs across browser restarts**
+(`zen-safe-close.rememberLoadedTabs`). It is off by default. Enabling it records
+the current loaded/unloaded state, enables native previous-session startup and
+on-demand tab restore, then reloads only previously loaded restored tabs on
+subsequent launches. It does not create duplicate tabs or change selection.
+The policy applies to pinned and ordinary tabs and is independent of folder
+visibility. Enable **Always show loaded tabs in collapsed folders** as well if
+you want those rows visible in collapsed folders after they finish restoring.
+Turning session memory off restores the saved startup/restore preferences
+(unless externally changed) and removes markers on open tabs. Private windows
+are excluded. Pages load again; this does not preserve their live JavaScript
+heap or guarantee unsaved application data. See [session-memory verification](tests/session-memory.md).
+
 ## Compatibility and limits
 
 - Uses privileged Zen and Firefox internals; browser updates may require adjustments.
@@ -76,7 +90,7 @@ Runtime files are `theme.json`, `preferences.json`, and `zen-safe-close.uc.js`.
 There is no build step or runtime dependency on Node.js.
 For development checks, run `node --check zen-safe-close.uc.js` and
 `node --test tests/*.test.cjs` (Node.js 18+).
-These tests execute the visual and gesture modules with simulated browser objects.
+These tests execute the visual, folder, session and gesture modules with simulated browser objects.
 They cover CSS ownership, recognition, tab commands, cancellation, trail drawing
 and cleanup; they do not test Gecko rendering or native input.
 See [folder regression notes](tests/folder-regression.md) for the cause, upstream
