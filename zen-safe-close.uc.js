@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           ZenArcMod
-// @version        2.4.1
+// @version        2.5.0
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,7 +9,7 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.4.1";
+  const VERSION = "2.5.0";
   const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {
@@ -19,7 +19,7 @@
   let disposed = false, quitting = false, installed = false;
   let lastError = "", cancelLanding = null;
   const PREFIX = "zen-safe-close.";
-  const DEFAULTS = {"enabled":true,"protectPinned":true,"emptyScreen":true,"neutralFocus":true,"preserveScroll":true,"hideClose":true,"hideUnload":false,"visuals":true,"includeFolders":true,"inactive":"unloaded","effect":"sepia","opacity":"1","strength":"1","saturation":"0.6","gestures":true,"newGesture":"D","closeGesture":"DR","gestureDistance":"24","settleTime":"200","menuDelay":"500","visualScope":"pinned","density":"roomy","showLoadedInFolders":false,"rememberLoadedTabs":false,"trail":true,"trailColor":"#168f85","trailWidth":"12"};
+  const DEFAULTS = {"enabled":true,"protectPinned":true,"emptyScreen":true,"neutralFocus":true,"preserveScroll":true,"hideClose":true,"hideUnload":false,"visuals":true,"includeFolders":true,"inactive":"unloaded","effect":"sepia","opacity":"1","strength":"1","saturation":"0.6","gestures":true,"newGesture":"D","closeGesture":"DR","gestureDistance":"24","settleTime":"200","menuDelay":"500","visualScope":"pinned","density":"roomy","showLoadedInFolders":false,"rememberLoadedTabs":false,"collapseSleepingFoldersAtStartup":true,"trail":true,"trailColor":"#168f85","trailWidth":"12"};
   let config = {}, configRevision = 0, configErrors = [];
   let onConfigChanged = () => {};
   function readConfig() {
@@ -291,7 +291,8 @@
         nativeEmptyAvailable: belongs(win.gZenWorkspaces?._emptyTab),
         configErrors: [...configErrors], configRevision,
         lastError, hooks: originals.map(item => item[1]),
-        folderLayout: win.__zenSafeCloseLoadedFolders?.status, sessionMemory: win.__zenSafeCloseSessionMemory?.status };
+        folderLayout: win.__zenSafeCloseLoadedFolders?.status, sessionMemory: win.__zenSafeCloseSessionMemory?.status,
+        startupFolders: win.__zenSafeCloseStartupFolderRule?.status };
     }
   };
   function install() {
@@ -951,6 +952,7 @@
       const original = manager[name];
       const replacement = function(group, ...args) {
         if (!active || !enabled() || !isFolder(group)) return original.call(this, group, ...args);
+        if (win.__zenSafeCloseApplyingStartupFolders) { schedule(); return Promise.resolve(false); }
         if (["animateExpand", "animateCollapse"].includes(name)) holdPosition(group);
         render();
         schedule(); // Native callers may clear activeTabs after awaiting us.
@@ -1049,6 +1051,84 @@
   refresh();
 })();
 
+
+(() => {
+  "use strict";
+  const win = window, api = win.__zenSafeClose;
+  if (!api || !win.gBrowser) return;
+  win.__zenSafeCloseStartupFolderRule?.destroy();
+  const STARTUP = "__zenSafeCloseStartupFolders";
+  // Retain the one-shot token across Sine hot reloads, not across windows/restarts.
+  const state = win[STARTUP] ||= { handled: false, collapsed: 0, touched: new WeakSet() };
+  let stopped = false, ready = false, busy = false, timer = null;
+  const enabled = () => api.config.enabled && api.config.collapseSleepingFoldersAtStartup;
+  if (!enabled()) state.handled = true;
+  function schedule() {
+    if (!stopped && !state.handled && timer === null) timer = win.setTimeout(() => {
+      timer = null;
+      if (!ready || busy || api.status?.installed === false || win.closed) return;
+      if (!enabled()) { state.handled = true; return; }
+      state.handled = true;
+      const folders = Array.from(win.gBrowser.tabContainer?.querySelectorAll("zen-folder") || [])
+        .filter(folder => folder.isConnected && !folder.closest?.("[drag-image]"));
+      win.__zenSafeCloseApplyingStartupFolders = true;
+      try {
+        for (const folder of folders.reverse()) {
+          if (folder.collapsed || state.touched.has(folder)) continue;
+          const hasLoaded = Array.from(folder.tabs || []).some(tab =>
+            !tab.closing && !tab.hasAttribute("zen-empty-tab") &&
+            (!tab.hasAttribute("pending") || win.__zenSafeCloseSessionMemory?.isRememberedLoaded?.(tab)));
+          if (!hasLoaded) {
+            try { folder.collapsed = true; state.collapsed++; }
+            catch (error) { Components.utils.reportError("[ZenArcMod startup folders] " + error); }
+          }
+        }
+      } finally { delete win.__zenSafeCloseApplyingStartupFolders; }
+      win.__zenSafeCloseLoadedFolders?.refresh();
+    }, 0);
+  }
+  function input(event) {
+    if (!event.isTrusted || state.handled) return;
+    let folder = event.target?.closest?.("zen-folder");
+    if (!folder) folder = event.composedPath?.().find(node => node.localName === "zen-folder");
+    // Don't close a branch the user has already opened during slow startup.
+    for (; folder; folder = folder.group) state.touched.add(folder);
+  }
+  function changed() {
+    if (!enabled()) state.handled = true;
+    schedule();
+  }
+  const handlers = [
+    ["pointerdown", input], ["keydown", input],
+    ["ZenSafeCloseConfigChanged", changed],
+    ["SSWindowStateBusy", () => { busy = true; }],
+    ["SSWindowStateReady", () => { busy = false; schedule(); }]
+  ];
+  for (const [type, fn] of handlers) win.addEventListener(type, fn, true);
+  const originalUninstall = api.uninstall;
+  function destroy() {
+    if (stopped) return;
+    stopped = true;
+    if (timer !== null) win.clearTimeout(timer);
+    for (const [type, fn] of handlers) win.removeEventListener(type, fn, true);
+    win.removeEventListener("unload", destroy);
+    if (api.uninstall === combinedUninstall) api.uninstall = originalUninstall;
+    if (win.__zenSafeCloseStartupFolderRule?.destroy === destroy) delete win.__zenSafeCloseStartupFolderRule;
+  }
+  function combinedUninstall() { destroy(); return originalUninstall.call(api); }
+  api.uninstall = combinedUninstall;
+  if (typeof win.addUnloadListener === "function") win.addUnloadListener(combinedUninstall);
+  win.addEventListener("unload", destroy, { once: true });
+  win.__zenSafeCloseStartupFolderRule = { destroy,
+    get status() { return { ready, handled: state.handled, collapsed: state.collapsed }; } };
+  try {
+    const ss = win.SessionStore || ChromeUtils.importESModule("resource:///modules/sessionstore/SessionStore.sys.mjs").SessionStore;
+    Promise.resolve(ss.promiseAllWindowsRestored || ss.promiseInitialized).then(() => {
+      if (stopped) return;
+      ready = true; schedule();
+    }).catch(error => Components.utils.reportError("[ZenArcMod startup folders] " + error));
+  } catch (error) { Components.utils.reportError("[ZenArcMod startup folders] " + error); }
+})();
 
 (() => {
   "use strict";

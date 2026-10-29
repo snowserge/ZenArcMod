@@ -11,6 +11,7 @@ Sine JavaScript mod for Zen Browser. No Node.js is required to install or run it
 - Sepia or grayscale for unloaded pinned tabs, including pinned tabs inside folders.
 - Configurable visual scope: pinned only by default; all tabs optionally.
 - Optional loaded-tab visibility: keep all loaded tabs visible in every collapsed folder, including nested folders, independently of the selected tab.
+- At startup, collapse folders without loaded tabs (configurable, enabled by default).
 - Optional session memory: remember which existing tabs were loaded and resume those pages in the background after restart.
 - Live tab density: Roomy (native), Cosy (32px plus margins), Compact (28px).
 - Right-button gestures on all tab content, including websites, settings, system pages and PDFs: Down = new tab; Down then Right = close/unload.
@@ -32,7 +33,7 @@ Disable Gesturefy (and any other mouse gesture extension) before enabling this m
 1. Back up the existing `chrome/sine-mods/zen-safe-close` folder and `chrome/sine-mods/mods.json`.
 2. Disable the existing ZenArcMod entry and restart Zen so its old hooks are removed.
 3. Install this repository through Sine. It uses the same stable mod ID, `zen-safe-close`.
-4. Restart Zen and confirm the card shows version 2.4.1 and a Configure button.
+4. Restart Zen and confirm the card shows version 2.5.0 and a Configure button.
 5. Enable updates for the mod in Sine. Existing `zen-safe-close.*` preferences remain in the browser profile.
 
 Do not run an older AutoConfig/userChrome copy alongside the Sine mod.
@@ -54,6 +55,14 @@ layout rather than native collapse animations, and keeps folder collapsed flags
 unchanged. Folder toggles preserve the clicked header position; wheel, keyboard
 or pointer input immediately cancels the event-driven header anchoring. Turning the
 option off restores native visibility based on current selection.
+**Collapse folders without loaded tabs at startup** is enabled by default.
+After native session restoration it collapses folders containing only sleeping
+tabs or placeholders, including empty nested branches. Remembered tabs queued
+for restoration count as loaded, so their folders retain their previous state.
+This is a one-shot startup rule; manually reopened folders stay open afterwards.
+Disabling the checkbox restores native behavior on the next startup. See
+[startup-folder verification](tests/startup-folders.md).
+
 The overall workspace pinned-section toggle remains native. See
 [folder visibility verification](tests/loaded-folder-visibility.md) for checks.
 
