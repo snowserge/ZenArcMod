@@ -11,7 +11,8 @@ Sine JavaScript mod for Zen Browser. No Node.js is required to install or run it
 - Sepia or grayscale for unloaded pinned tabs, including pinned tabs inside folders.
 - Configurable visual scope: pinned only by default; all tabs optionally.
 - Live tab density: Roomy (native), Cosy (32px plus margins), Compact (28px).
-- Supplemental right-button gestures on system and other restricted pages: Down = new tab; Down then Right = close.
+- Right-button gestures on all tab content, including websites, settings, system pages and PDFs: Down = new tab; Down then Right = close/unload.
+- A teal mouse trail that grows with travelled distance, with configurable color and maximum width.
 - Live settings in Sine's Configure dialog, shared between windows.
 
 ## Install
@@ -22,14 +23,14 @@ Sine JavaScript mod for Zen Browser. No Node.js is required to install or run it
 4. Restart Zen once, then open Configure on the ZenArcMod card.
 
 Keep `zen.urlbar.replace-newtab` enabled for the native empty-screen behavior.
-Ordinary web-page gestures are provided by Gesturefy and configured separately in that extension.
+Disable Gesturefy (and any other mouse gesture extension) before enabling this mod's gestures, so one stroke runs one command. No extension is required.
 
 ## Migrate from the manually installed mod
 
 1. Back up the existing `chrome/sine-mods/zen-safe-close` folder and `chrome/sine-mods/mods.json`.
 2. Disable the existing ZenArcMod entry and restart Zen so its old hooks are removed.
 3. Install this repository through Sine. It uses the same stable mod ID, `zen-safe-close`.
-4. Restart Zen and confirm the card shows version 2.1.4 and a Configure button.
+4. Restart Zen and confirm the card shows version 2.2.0 and a Configure button.
 5. Enable updates for the mod in Sine. Existing `zen-safe-close.*` preferences remain in the browser profile.
 
 Do not run an older AutoConfig/userChrome copy alongside the Sine mod.
@@ -49,7 +50,10 @@ Disabling pinned protection restores Zen's native close behavior.
 - Split View and Glance tabs are protected from removal but are not automatically discarded by this mod.
 - If Zen's native empty screen is unavailable, the mod keeps the pinned tab and reports an error instead of creating an ordinary blank tab.
 - A cancelled beforeunload prompt keeps the pinned tab loaded; it may already have switched to the empty screen.
-- System-page gestures are a small supplement, not a complete Gesturefy replacement. They do not draw a gesture trail.
+- Gestures start over the active tab content, including the native empty screen, not the toolbar or tab sidebar. Only the two configured commands are supported. Native dialogs, other application windows and detached picture-in-picture windows are outside this scope.
+- While gestures are enabled, the mod defers right-click menus until mouse-up on macOS/Linux; Windows already does this. The previous preference is restored when the last participating browser window disables/unloads the module.
+- Disable Gesturefy first. Keeping both enabled can execute duplicate commands.
+- Native remote-frame event routing, PDF viewers, fullscreen, mixed-DPI displays and OS context menus still require the live checks in [gesture verification](tests/gesture-verification.md).
 - Density can conflict with other mods that override tab layout. Test tab dragging and sidebar layout with your theme.
 - Automated tests use simulated browser objects; actual rendering and native input need verification in Zen.
 
@@ -58,9 +62,10 @@ Disabling pinned protection restores Zen's native close behavior.
 Runtime files are `theme.json`, `preferences.json`, and `zen-safe-close.uc.js`.
 There is no build step or runtime dependency on Node.js.
 For development checks, run `node --check zen-safe-close.uc.js` and
-`node --test tests/visuals.test.cjs` (Node.js 18+).
-These tests execute the visual module with simulated browser objects and check
-the generated CSS contract; they do not test Gecko rendering or native input.
+`node --test tests/*.test.cjs` (Node.js 18+).
+These tests execute the visual and gesture modules with simulated browser objects.
+They cover CSS ownership, recognition, tab commands, cancellation, trail drawing
+and cleanup; they do not test Gecko rendering or native input.
 See [folder regression notes](tests/folder-regression.md) for the cause, upstream
 references, and manual browser checks.
 Do not publish a complete browser profile, personal `mods.json`, backup files, cookies, or session data.
@@ -69,3 +74,6 @@ Do not publish a complete browser profile, personal `mods.json`, backup files, c
 
 MIT; see LICENSE.txt.
 
+
+For releases, advance both `version` and the explicit UTC `updatedAt` in
+`theme.json`; Sine detects updates by date. Keep the script version in sync.
