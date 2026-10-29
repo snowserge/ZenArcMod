@@ -10,6 +10,7 @@ Sine JavaScript mod for Zen Browser. No Node.js is required to install or run it
 - Hide the close X independently of the minus/unload button.
 - Sepia or grayscale for unloaded pinned tabs, including pinned tabs inside folders.
 - Configurable visual scope: pinned only by default; all tabs optionally.
+- Optional loaded-tab visibility: keep all loaded tabs visible in every collapsed folder, including nested folders, independently of the selected tab.
 - Live tab density: Roomy (native), Cosy (32px plus margins), Compact (28px).
 - Right-button gestures on all tab content, including websites, settings, system pages and PDFs: Down = new tab; Down then Right = close/unload.
 - A teal mouse trail that grows with travelled distance, with configurable color and maximum width.
@@ -30,7 +31,7 @@ Disable Gesturefy (and any other mouse gesture extension) before enabling this m
 1. Back up the existing `chrome/sine-mods/zen-safe-close` folder and `chrome/sine-mods/mods.json`.
 2. Disable the existing ZenArcMod entry and restart Zen so its old hooks are removed.
 3. Install this repository through Sine. It uses the same stable mod ID, `zen-safe-close`.
-4. Restart Zen and confirm the card shows version 2.2.0 and a Configure button.
+4. Restart Zen and confirm the card shows version 2.3.0 and a Configure button.
 5. Enable updates for the mod in Sine. Existing `zen-safe-close.*` preferences remain in the browser profile.
 
 Do not run an older AutoConfig/userChrome copy alongside the Sine mod.
@@ -42,6 +43,16 @@ Checkboxes and dropdowns apply immediately; text fields apply when Sine commits 
 Roomy restores native tab dimensions. Density applies to ordinary and pinned tab rows, including folder children, but leaves Essentials tiles and folder headers at native dimensions.
 Sepia's default scope remains pinned tabs only, independently of density.
 Disabling pinned protection restores Zen's native close behavior.
+
+Under **Folder visibility**, enable **Always show loaded tabs in collapsed folders**
+to keep every loaded tab visible in all folders. It is off by default and applies
+immediately. Collapsed folders hide unloaded tabs; expanded folders show their
+normal contents. Restoring/unloading a tab updates its visibility automatically.
+The option does not load or unload tabs. While enabled it uses immediate folder
+layout rather than native collapse animations, and keeps folder collapsed flags
+unchanged. Turning it off restores native visibility based on current selection.
+The overall workspace pinned-section toggle remains native. See
+[folder visibility verification](tests/loaded-folder-visibility.md) for checks.
 
 ## Compatibility and limits
 

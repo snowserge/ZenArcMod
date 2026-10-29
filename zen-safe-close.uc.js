@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           ZenArcMod
-// @version        2.2.0
+// @version        2.3.0
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,7 +9,7 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.2.0";
+  const VERSION = "2.3.0";
   const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {
@@ -19,7 +19,7 @@
   let disposed = false, quitting = false, installed = false;
   let lastError = "", cancelLanding = null;
   const PREFIX = "zen-safe-close.";
-  const DEFAULTS = {"enabled":true,"protectPinned":true,"emptyScreen":true,"neutralFocus":true,"preserveScroll":true,"hideClose":true,"hideUnload":false,"visuals":true,"includeFolders":true,"inactive":"unloaded","effect":"sepia","opacity":"1","strength":"1","saturation":"0.6","gestures":true,"newGesture":"D","closeGesture":"DR","gestureDistance":"24","settleTime":"200","menuDelay":"500","visualScope":"pinned","density":"roomy","trail":true,"trailColor":"#168f85","trailWidth":"12"};
+  const DEFAULTS = {"enabled":true,"protectPinned":true,"emptyScreen":true,"neutralFocus":true,"preserveScroll":true,"hideClose":true,"hideUnload":false,"visuals":true,"includeFolders":true,"inactive":"unloaded","effect":"sepia","opacity":"1","strength":"1","saturation":"0.6","gestures":true,"newGesture":"D","closeGesture":"DR","gestureDistance":"24","settleTime":"200","menuDelay":"500","visualScope":"pinned","density":"roomy","showLoadedInFolders":false,"trail":true,"trailColor":"#168f85","trailWidth":"12"};
   let config = {}, configRevision = 0, configErrors = [];
   let onConfigChanged = () => {};
   function readConfig() {
@@ -468,6 +468,194 @@
   }
   win.addEventListener("unload", destroy, { once: true });
   win.__zenSafeCloseVisuals = { refresh, destroy };
+  refresh();
+})();
+
+(() => {
+  "use strict";
+  const win = window, api = win.__zenSafeClose;
+  if (!api || !win.gBrowser) return;
+  win.__zenSafeCloseLoadedFolders?.destroy();
+  const FLAG = "data-zsc-loaded-folders";
+  const HIDE = "data-zsc-folder-hidden", BOX = "data-zsc-folder-container";
+  const START = "data-zsc-folder-start";
+  const methods = ["animateCollapse", "animateExpand", "animateSelect", "animateUnload", "animateUnloadAll"];
+  let stopped = false, active = false, frame = null, manager = null;
+  const hooks = [], touched = new Set(), ownedFolders = new Set();
+  let managedTabs = new Set();
+  const isFolder = node => node?.localName === "zen-folder";
+  const enabled = () => !stopped && api.config.enabled && api.config.showLoadedInFolders;
+  const loaded = tab => !tab.closing && !tab.hasAttribute("pending") &&
+    !tab.hasAttribute("zen-empty-tab");
+  const style = document.createElementNS("http://www.w3.org/1999/xhtml", "style");
+  style.id = "zen-safe-close-loaded-folders";
+  style.textContent = `
+    [${FLAG}] [${HIDE}] { display: none !important; }
+    [${FLAG}] [${BOX}]:not([${HIDE}]) { display: flex !important; flex-direction: column; }
+    [${FLAG}] [${START}] { margin-top: 0 !important; }
+  `;
+  document.documentElement.appendChild(style);
+  function mark(node, attr, value) {
+    if (!node) return;
+    touched.add(node);
+    node.toggleAttribute(attr, !!value);
+  }
+  function clearLayout(node) {
+    if (!node) return;
+    // Only native folder-animation properties; keep appearance on .tab-stack.
+    for (const animation of node.getAnimations?.() || []) {
+      const keys = animation.effect?.getKeyframes?.() || [];
+      if (keys.some(key => ["opacity", "height", "minHeight", "marginTop"].some(p => p in key))) animation.cancel();
+    }
+    for (const prop of ["opacity", "height", "min-height", "--zen-folder-indent"]) node.style.removeProperty(prop);
+  }
+  function folders() {
+    return Array.from(win.gBrowser.tabContainer?.querySelectorAll("zen-folder") || [])
+      .filter(folder => folder.isConnected && !folder.closest?.("[drag-image]"));
+  }
+  function collapsedParent(node) {
+    for (let group = node.group; group; group = group.group) {
+      if (isFolder(group) && group.collapsed) return true;
+    }
+    return false;
+  }
+  function render() {
+    if (!active || !enabled()) return;
+    const all = folders();
+    for (const node of touched) {
+      for (const attr of [HIDE, BOX, START]) node.removeAttribute(attr);
+    }
+    touched.clear();
+    for (const folder of ownedFolders) if (!all.includes(folder)) ownedFolders.delete(folder);
+    const folderTabs = new Set();
+    for (const folder of all) {
+      ownedFolders.add(folder);
+      const tabs = Array.from(folder.tabs || []), live = tabs.filter(loaded);
+      tabs.forEach(tab => folderTabs.add(tab));
+      const visible = folder.collapsed ? live : [];
+      const previous = folder.activeTabs || [];
+      folder.toggleAttribute("has-active", !!visible.length);
+      if (previous.length !== visible.length || previous.some((tab, i) => tab !== visible[i])) folder.activeTabs = visible;
+      const hideFolder = collapsedParent(folder) && !live.length;
+      clearLayout(folder);
+      clearLayout(folder.labelElement?.parentElement);
+      mark(folder, HIDE, hideFolder);
+      const box = folder.groupContainer;
+      if (box) {
+        clearLayout(box);
+        box.removeAttribute("hidden");
+        box.style.removeProperty("overflow-y");
+        mark(box, BOX, true);
+        mark(box, HIDE, (folder.collapsed || collapsedParent(folder)) && !live.length);
+      }
+      const start = folder.groupStartElement;
+      mark(start, START, true);
+      manager.updateFolderIcon?.(folder);
+    }
+    // Final pass after native activeTabs setters: every collapsed ancestor must
+    // contain the loaded descendant in its list for tab.visible to stay true.
+    for (const tab of managedTabs) {
+      if (!folderTabs.has(tab)) { tab.removeAttribute("folder-active"); clearLayout(tab); }
+    }
+    managedTabs = folderTabs;
+    for (const tab of folderTabs) {
+      clearLayout(tab);
+      const inCollapsed = collapsedParent(tab);
+      tab.toggleAttribute("folder-active", loaded(tab) && inCollapsed);
+      mark(tab, HIDE, inCollapsed && !loaded(tab));
+      const split = tab.group?.hasAttribute("split-view-group") ? tab.group : null;
+      if (split) {
+        clearLayout(split);
+        mark(split, HIDE, collapsedParent(split) && !Array.from(split.tabs || []).some(loaded));
+      }
+    }
+    win.gBrowser.tabContainer?._invalidateCachedVisibleTabs?.();
+  }
+  function schedule() {
+    if (!stopped && frame === null) frame = win.requestAnimationFrame(() => { frame = null; refresh(); });
+  }
+  function installHooks() {
+    const next = win.gZenFolders;
+    if (manager === next && hooks.length) return true;
+    if (!next || methods.some(name => typeof next[name] !== "function")) return false;
+    manager = next;
+    for (const name of methods) {
+      const original = manager[name];
+      const replacement = function(group, ...args) {
+        if (!active || !enabled() || !isFolder(group)) return original.call(this, group, ...args);
+        render();
+        schedule(); // Native callers may clear activeTabs after awaiting us.
+        // animateSelect's false means keep the folder collapsed, even if all
+        // its tabs are loaded. No mutation of tab selection is needed.
+        return Promise.resolve(false);
+      };
+      manager[name] = replacement;
+      hooks.push([manager, name, original, replacement]);
+    }
+    return true;
+  }
+  function restore() {
+    active = false;
+    document.documentElement.removeAttribute(FLAG);
+    for (const node of touched) {
+      for (const attr of [HIDE, BOX, START]) node.removeAttribute(attr);
+    }
+    touched.clear();
+    const all = [...ownedFolders].filter(folder => folder.isConnected);
+    const tabs = new Set(all.flatMap(folder => Array.from(folder.tabs || [])));
+    for (const folder of all) { folder.removeAttribute("has-active"); folder.activeTabs = []; }
+    for (const tab of tabs) { tab.removeAttribute("folder-active"); clearLayout(tab); }
+    // Recompute native visibility from the current selection. Keep all folder
+    // collapsed flags and tab loading state unchanged when toggling the option.
+    for (const folder of all.reverse()) {
+      const name = folder.collapsed ? "animateCollapse" : "animateExpand";
+      try { Promise.resolve(manager[name](folder)).catch(error => Components.utils.reportError(error)); }
+      catch (error) { Components.utils.reportError(error); }
+    }
+    ownedFolders.clear();
+    managedTabs.clear();
+  }
+  function refresh() {
+    if (enabled() && installHooks()) {
+      active = true;
+      document.documentElement.setAttribute(FLAG, "true");
+      render();
+    } else if (active) restore();
+  }
+  const events = ["TabSelect", "TabOpen", "TabClose", "TabBrowserDiscarded", "SSTabRestored",
+    "TabGrouped", "TabUngrouped", "FolderGrouped", "FolderUngrouped", "TabGroupCreate",
+    "TabGroupCollapse", "TabGroupExpand", "TabGroupAnimationComplete"];
+  for (const name of events) win.addEventListener(name, schedule, true);
+  win.addEventListener("ZenSafeCloseConfigChanged", refresh);
+  const observer = new MutationObserver(records => {
+    if (records.some(record => record.type === "attributes" ||
+        [...record.addedNodes, ...record.removedNodes].some(node => node.nodeType === 1 &&
+          (node.matches(".tabbrowser-tab, zen-folder, tab-group") || node.querySelector(".tabbrowser-tab, zen-folder"))))) schedule();
+  });
+  observer.observe(win.gBrowser.tabContainer, { subtree: true, childList: true,
+    attributes: true, attributeFilter: ["pending", "collapsed"] });
+  const originalUninstall = api.uninstall;
+  function destroy() {
+    if (stopped) return;
+    stopped = true;
+    if (frame !== null) win.cancelAnimationFrame(frame);
+    observer.disconnect();
+    for (const name of events) win.removeEventListener(name, schedule, true);
+    win.removeEventListener("ZenSafeCloseConfigChanged", refresh);
+    win.removeEventListener("unload", destroy);
+    if (active) restore();
+    for (const [object, name, original, replacement] of hooks.reverse()) {
+      if (object[name] === replacement) object[name] = original;
+    }
+    style.remove();
+    if (api.uninstall === combinedUninstall) api.uninstall = originalUninstall;
+    if (win.__zenSafeCloseLoadedFolders?.destroy === destroy) delete win.__zenSafeCloseLoadedFolders;
+  }
+  function combinedUninstall() { destroy(); return originalUninstall.call(api); }
+  api.uninstall = combinedUninstall;
+  if (typeof win.addUnloadListener === "function") win.addUnloadListener(combinedUninstall);
+  win.addEventListener("unload", destroy, { once: true });
+  win.__zenSafeCloseLoadedFolders = { refresh, destroy };
   refresh();
 })();
 
