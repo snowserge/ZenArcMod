@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           ZenArcMod
-// @version        2.1.3
+// @version        2.1.4
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,7 +9,7 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.1.3";
+  const VERSION = "2.1.4";
   const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {
@@ -374,7 +374,6 @@
               --tab-padding-block-end: 0px !important;
               padding-block: 0 !important;
               margin-block: 0 !important;
-              min-height: calc(${density.height}px + ${density.margin * 2}px) !important;
             }
             ${tab} > .tab-stack > .tab-background {
               min-height: ${density.height}px !important;
@@ -391,7 +390,9 @@
           : c.effect === "grayscale" ? "grayscale(" + c.strength + ")" : "none";
         const selector = c.visualScope === "pinned"
           ? ".tabbrowser-tab[pinned][data-zsc-unloaded]" : ".tabbrowser-tab[data-zsc-unloaded]";
-        rules.push(selector + " { filter: " + filter +
+        // Zen animates the outer tab's opacity/height when folding active folders.
+        // Keep appearance on its contents so native collapse can hide the row.
+        rules.push(selector + " > .tab-stack { filter: " + filter +
           " !important; opacity: " + c.opacity + " !important; }");
       }
     }
@@ -683,3 +684,4 @@
     }
   };
 })();
+

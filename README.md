@@ -29,7 +29,7 @@ Ordinary web-page gestures are provided by Gesturefy and configured separately i
 1. Back up the existing `chrome/sine-mods/zen-safe-close` folder and `chrome/sine-mods/mods.json`.
 2. Disable the existing ZenArcMod entry and restart Zen so its old hooks are removed.
 3. Install this repository through Sine. It uses the same stable mod ID, `zen-safe-close`.
-4. Restart Zen and confirm the card shows version 2.1.3 and a Configure button.
+4. Restart Zen and confirm the card shows version 2.1.4 and a Configure button.
 5. Enable updates for the mod in Sine. Existing `zen-safe-close.*` preferences remain in the browser profile.
 
 Do not run an older AutoConfig/userChrome copy alongside the Sine mod.
@@ -57,8 +57,15 @@ Disabling pinned protection restores Zen's native close behavior.
 
 Runtime files are `theme.json`, `preferences.json`, and `zen-safe-close.uc.js`.
 There is no build step or runtime dependency on Node.js.
+For development checks, run `node --check zen-safe-close.uc.js` and
+`node --test tests/visuals.test.cjs` (Node.js 18+).
+These tests execute the visual module with simulated browser objects and check
+the generated CSS contract; they do not test Gecko rendering or native input.
+See [folder regression notes](tests/folder-regression.md) for the cause, upstream
+references, and manual browser checks.
 Do not publish a complete browser profile, personal `mods.json`, backup files, cookies, or session data.
 
 ## License
 
 MIT; see LICENSE.txt.
+
