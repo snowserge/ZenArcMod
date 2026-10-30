@@ -185,3 +185,7 @@ test('hot reload during a toggle cancels old effects before the new generation o
   assert(!sleep.hasAttribute(MOTION));assert(!sleep.hasAttribute(HIDE));
   assert.equal(h.window.__zenSafeCloseLoadedFolders.status.animatingRows,0);
 });
+
+test('temporary animation containers retain column layout even when logically hidden',()=>{
+  assert.match(code,/\[\$\{BOX\}\]\[\$\{MOTION\}\] \{ display: flex !important; flex-direction: column;/);
+});

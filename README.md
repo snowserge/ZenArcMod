@@ -39,7 +39,7 @@ and gestures were registered.
 1. Back up the existing `chrome/sine-mods/zen-safe-close` folder and `chrome/sine-mods/mods.json`.
 2. Disable the existing ZenArcMod entry and restart Zen so its old hooks are removed.
 3. Install this repository through Sine. It uses the same stable mod ID, `zen-safe-close`.
-4. Restart Zen and confirm the card shows version 2.5.5 and a Configure button.
+4. Restart Zen and confirm the card shows version 2.5.6 and a Configure button.
 5. Enable updates for the mod in Sine. Existing `zen-safe-close.*` preferences remain in the browser profile.
 
 Do not run an older AutoConfig/userChrome copy alongside the Sine mod.
@@ -124,6 +124,13 @@ An active replacement takes ownership before native animations start. Actual
 disable/removal still restores native layout. Late hidden/margin writes from an
 older copy are reconciled by the replacement. See
 [hot-reload regression checks](tests/folder-reload.md).
+
+Version 2.5.6 keeps the animation container vertical when a collapsed folder has
+no loaded tabs. Previously that temporary flex container could use the default
+row direction, squeezing sleeping tabs side by side. A real Firefox layout check
+now reproduces the old rule and verifies collapse, rapid reversal and reopening
+with zero, one and two loaded tabs. See
+[empty-folder animation checks](tests/empty-folder-animation.md).
 
 ## Compatibility and limits
 

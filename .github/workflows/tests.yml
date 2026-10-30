@@ -19,3 +19,19 @@ jobs:
           node-version: '22'
       - run: node --check zen-safe-close.uc.js
       - run: node --test
+
+  firefox-layout:
+    runs-on: ubuntu-latest
+    env:
+      ZSC_BROWSER_DEPS: ${{ runner.temp }}/zsc-browser
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install isolated browser test tools
+        run: npm install --prefix "$ZSC_BROWSER_DEPS" --no-save --no-package-lock playwright@1.64.1
+      - name: Install Firefox
+        run: '"$ZSC_BROWSER_DEPS/node_modules/.bin/playwright" install --with-deps firefox'
+      - name: Check Firefox folder rendering
+        run: node tests/browser/folder-layout.cjs
