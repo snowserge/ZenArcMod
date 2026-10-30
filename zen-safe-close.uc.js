@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           ZenArcMod
-// @version        2.5.2
+// @version        2.5.3
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,7 +9,7 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.5.2";
+  const VERSION = "2.5.3";
   const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {
@@ -821,7 +821,8 @@
   win.__zenSafeCloseLoadedFolders?.destroy();
   const FLAG = "data-zsc-loaded-folders";
   const HIDE = "data-zsc-folder-hidden", BOX = "data-zsc-folder-container";
-  const START = "data-zsc-folder-start";
+  const START = "data-zsc-folder-start", MOTION = "data-zsc-folder-motion";
+  const motions = new Map(), motionBoxes = new Set();
   const methods = ["animateCollapse", "animateExpand", "animateSelect", "animateUnload", "animateUnloadAll"];
   let stopped = false, active = false, frame = null, manager = null;
   const hooks = [], ownedFolders = new Set();
@@ -838,6 +839,8 @@
     [${FLAG}] [${HIDE}] { display: none !important; }
     [${FLAG}] [${BOX}]:not([${HIDE}]) { display: flex !important; flex-direction: column; }
     [${FLAG}] [${START}] { margin-top: 0 !important; }
+    /* Temporary layout ownership only while a row is entering/leaving. */
+    [${FLAG}] [${MOTION}] { display: flex !important; min-height: 0 !important; overflow: clip !important; }
     [${FLAG}] #tabbrowser-tabs, [${FLAG}] #tabbrowser-tabs * { overflow-anchor: none !important; }
   `;
   document.documentElement.appendChild(style);
@@ -851,6 +854,7 @@
     cleaned.add(node);
     // Only native folder-animation properties; keep appearance on .tab-stack.
     for (const animation of node.getAnimations?.() || []) {
+      if (motions.get(node)?.animation === animation) continue;
       const keys = animation.effect?.getKeyframes?.() || [];
       if (keys.some(key => ["opacity", "height", "minHeight", "marginTop"].some(p => p in key))) animation.cancel();
     }
@@ -868,6 +872,10 @@
   }
   function render() {
     if (!active || !enabled()) return;
+    for (const [node, entry] of motions) {
+      if (!node.isConnected || (!inside(node, entry.group) && !inside(entry.group, node))) cancelMotion(node);
+    }
+    releaseMotionBoxes();
     for (const [node, previous] of scrollerStyles) {
       if (node.isConnected === false) { releaseScroller(node, previous); scrollerStyles.delete(node); }
     }
@@ -1042,6 +1050,98 @@
     for (const [node, previous] of scrollerStyles) releaseScroller(node, previous);
     scrollerStyles.clear();
   }
+
+  function inside(node, group) {
+    for (let owner = node.group; owner; owner = owner.group) if (owner === group) return true;
+    return false;
+  }
+  function motionDisabled() {
+    return manager?._dontAnimateFolder ||
+      win.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  }
+  function measure(node) {
+    const rect = node.getBoundingClientRect(), css = win.getComputedStyle(node);
+    return { height: rect.height > 0 ? (parseFloat(css.height) || rect.height) : 0,
+      opacity: css.opacity || "1", marginTop: css.marginTop || "0px",
+      marginBottom: css.marginBottom || "0px" };
+  }
+  function releaseMotionBoxes() {
+    const needed = new Set([...motions.values()].flatMap(entry => entry.boxes));
+    for (const box of motionBoxes) if (!needed.has(box)) {
+      box.removeAttribute(MOTION); motionBoxes.delete(box);
+    }
+  }
+  function cancelMotion(node) {
+    const entry = motions.get(node);
+    if (!entry) return;
+    motions.delete(node); node.removeAttribute(MOTION);
+    entry.animation.cancel();
+  }
+  function stopMotions() {
+    for (const node of [...motions.keys()]) cancelMotion(node);
+    releaseMotionBoxes();
+  }
+  function captureMotion(group) {
+    if (motionDisabled()) { stopMotions(); return null; }
+    const nodes = new Set([...managedTabs, ...ownedFolders]);
+    for (const tab of managedTabs) {
+      if (tab.group?.hasAttribute("split-view-group")) nodes.add(tab.group);
+    }
+    const before = new Map();
+    // Read every start value before cancelling any in-flight animation.
+    for (const node of nodes) {
+      if ((!inside(node, group) && !(motions.has(node) && inside(group, node))) ||
+          !node.isConnected || !node.getBoundingClientRect || !node.animate) continue;
+      before.set(node, { hidden: node.hasAttribute(HIDE), moving: motions.has(node), ...measure(node) });
+    }
+    for (const node of before.keys()) cancelMotion(node);
+    releaseMotionBoxes();
+    return before;
+  }
+  function animateLayout(before, group) {
+    if (!before) return;
+    const changed = [...before.keys()].filter(node =>
+      before.get(node).moving || before.get(node).hidden !== node.hasAttribute(HIDE));
+    // Animate a hidden branch as one unit, never both it and its descendants.
+    const rows = changed.filter(node => !changed.some(parent => parent !== node && inside(node, parent)));
+    const targets = new Map(rows.map(node => [node, node.hasAttribute(HIDE)
+      ? { height: 0, opacity: 0, marginTop: "0px", marginBottom: "0px" }
+      : measure(node)]));
+    const boxesForRow = new Map();
+    for (const node of rows) {
+      const boxes = []; boxesForRow.set(node, boxes);
+      for (let folder = node.group; folder; folder = folder.group) {
+        const box = folder.groupContainer;
+        if (box?.hasAttribute(HIDE)) { box.setAttribute(MOTION, ""); motionBoxes.add(box); boxes.push(box); }
+      }
+    }
+    for (const node of rows) {
+      const previous = before.get(node), target = targets.get(node);
+      const from = previous.hidden && !previous.moving
+        ? { height: 0, opacity: 0, marginTop: "0px", marginBottom: "0px" } : previous;
+      if (Math.abs(from.height - target.height) < 0.5 && from.opacity == target.opacity) continue;
+      node.setAttribute(MOTION, "");
+      try {
+        const frame = value => ({ height: value.height + "px", opacity: value.opacity,
+          marginTop: value.marginTop, marginBottom: value.marginBottom });
+        const animation = node.animate([frame(from), frame(target)], { duration: 180, easing: "ease-in-out" });
+        const entry = { animation, group, boxes: boxesForRow.get(node) };
+        motions.set(node, entry);
+        const finish = () => {
+          if (motions.get(node) !== entry) return;
+          motions.delete(node); node.removeAttribute(MOTION);
+          releaseMotionBoxes(); schedule();
+        };
+        animation.finished.then(finish, finish);
+      } catch (error) {
+        node.removeAttribute(MOTION);
+        Components.utils.reportError("[ZenArcMod folder animation] " + error);
+      }
+    }
+    releaseMotionBoxes();
+    preservePosition?.();
+  }
+
   function installHooks() {
     const next = win.gZenFolders;
     if (manager === next && hooks.length) return true;
@@ -1052,8 +1152,11 @@
       const replacement = function(group, ...args) {
         if (!active || !enabled() || !isFolder(group)) return original.call(this, group, ...args);
         if (win.__zenSafeCloseApplyingStartupFolders) { schedule(); return Promise.resolve(false); }
-        if (["animateExpand", "animateCollapse"].includes(name)) holdPosition(group);
+        const toggling = ["animateExpand", "animateCollapse"].includes(name);
+        const before = toggling ? captureMotion(group) : null;
+        if (toggling) holdPosition(group);
         render();
+        animateLayout(before, group);
         schedule(); // Native callers may clear activeTabs after awaiting us.
         // animateSelect's false means keep the folder collapsed, even if all
         // its tabs are loaded. No mutation of tab selection is needed.
@@ -1065,6 +1168,7 @@
     return true;
   }
   function restore() {
+    stopMotions();
     cancelPosition?.();
     active = false;
     document.documentElement.removeAttribute(FLAG);
@@ -1103,8 +1207,9 @@
     "TabGrouped", "TabUngrouped", "FolderGrouped", "FolderUngrouped", "TabGroupCreate",
     "TabGroupCollapse", "TabGroupExpand", "TabGroupAnimationComplete", "ZenSafeCloseSessionStateChanged"];
   for (const name of events) win.addEventListener(name, schedule, true);
-  win.addEventListener("ZenSafeCloseConfigChanged", refresh);
-  const sizes = typeof ResizeObserver === "function" ? new ResizeObserver(schedule) : null;
+  function changed() { stopMotions(); refresh(); }
+  win.addEventListener("ZenSafeCloseConfigChanged", changed);
+  const sizes = typeof ResizeObserver === "function" ? new ResizeObserver(() => { if (!motions.size) schedule(); }) : null;
   const observedSizes = new Set();
   const observer = new MutationObserver(records => {
     if (records.some(record => {
@@ -1130,7 +1235,7 @@
     observer.disconnect();
     sizes?.disconnect(); observedSizes.clear();
     for (const name of events) win.removeEventListener(name, schedule, true);
-    win.removeEventListener("ZenSafeCloseConfigChanged", refresh);
+    win.removeEventListener("ZenSafeCloseConfigChanged", changed);
     win.removeEventListener("unload", destroy);
     cancelPosition?.();
     if (active) restore();
@@ -1146,7 +1251,7 @@
   if (typeof win.addUnloadListener === "function") win.addUnloadListener(combinedUninstall);
   win.addEventListener("unload", destroy, { once: true });
   win.__zenSafeCloseLoadedFolders = { refresh, destroy,
-    get status() { return { active, folders: ownedFolders.size, holdingHeader: !!preservePosition, scrollers: scrollerStyles.size }; } };
+    get status() { return { active, folders: ownedFolders.size, holdingHeader: !!preservePosition, animatingRows: motions.size, scrollers: scrollerStyles.size }; } };
   refresh();
 })();
 
