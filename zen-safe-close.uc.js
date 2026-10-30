@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           ZenArcMod
-// @version        2.5.5
+// @version        2.5.6
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,7 +9,7 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.5.5";
+  const VERSION = "2.5.6";
   const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {
@@ -843,7 +843,8 @@
   style.id = "zen-safe-close-loaded-folders";
   style.textContent = `
     [${FLAG}] [${HIDE}] { display: none !important; }
-    [${FLAG}] [${BOX}]:not([${HIDE}]) { display: flex !important; flex-direction: column; }
+    [${FLAG}] [${BOX}]:not([${HIDE}]),
+    [${FLAG}] [${BOX}][${MOTION}] { display: flex !important; flex-direction: column; }
     [${FLAG}] [${START}] { margin-top: 0 !important; }
     /* Temporary layout ownership only while a row is entering/leaving. */
     [${FLAG}] [${MOTION}] { display: flex !important; min-height: 0 !important; overflow: clip !important; }
