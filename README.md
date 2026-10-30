@@ -39,7 +39,7 @@ and gestures were registered.
 1. Back up the existing `chrome/sine-mods/zen-safe-close` folder and `chrome/sine-mods/mods.json`.
 2. Disable the existing ZenArcMod entry and restart Zen so its old hooks are removed.
 3. Install this repository through Sine. It uses the same stable mod ID, `zen-safe-close`.
-4. Restart Zen and confirm the card shows version 2.5.4 and a Configure button.
+4. Restart Zen and confirm the card shows version 2.5.5 and a Configure button.
 5. Enable updates for the mod in Sine. Existing `zen-safe-close.*` preferences remain in the browser profile.
 
 Do not run an older AutoConfig/userChrome copy alongside the Sine mod.
@@ -117,6 +117,13 @@ custom intervals restores only the three scheduler preferences; disabling or
 uninstalling the mod also restores its previous popup and allowlist values,
 while preserving newer external changes. Backups survive browser shutdown and
 same-turn Sine hot reloads. See [browser-settings verification](tests/browser-settings.md).
+
+Version 2.5.5 fixes folder-layout handoff during Sine updates without restarting
+Zen: the outgoing copy cancels its own effects and defers native restoration.
+An active replacement takes ownership before native animations start. Actual
+disable/removal still restores native layout. Late hidden/margin writes from an
+older copy are reconciled by the replacement. See
+[hot-reload regression checks](tests/folder-reload.md).
 
 ## Compatibility and limits
 

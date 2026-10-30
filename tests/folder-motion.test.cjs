@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { setup } = require('./helpers/loaded-folders.cjs');
+const { setup, code } = require('./helpers/loaded-folders.cjs');
+const vm = require('node:vm');
 
 const HIDE='data-zsc-folder-hidden', MOTION='data-zsc-folder-motion';
 // A deterministic WAAPI/layout fixture. No Gecko rendering or native input.
@@ -165,4 +166,22 @@ test('independent folders release their temporary containers independently',asyn
   await h.finish(h.animations[0]);
   assert(!a.groupContainer.hasAttribute(MOTION));assert(b.groupContainer.hasAttribute(MOTION));
   await h.finish(h.animations[1]);assert(!b.groupContainer.hasAttribute(MOTION));
+});
+
+test('hot reload during a toggle cancels old effects before the new generation owns the rows',async()=>{
+  const h=fixture(),f=h.folder(),live=h.tab(f),sleep=h.tab(f,true);
+  live.selected=true;f.collapsed=false;h.refresh();
+  f.collapsed=true;await h.manager.animateCollapse(f);
+  const old=h.animations[0];old.progress=0.4;
+  h.api.uninstall();await Promise.resolve();
+  h.window.__zenSafeClose={config:{enabled:true,showLoadedInFolders:true},uninstall(){}};
+  vm.runInNewContext(code,h.context);h.flushJobs();h.flush();
+  assert.equal(old.playState,'idle');assert(!sleep.hasAttribute(MOTION));
+  assert(!f.groupContainer.hasAttribute(MOTION));assert(sleep.hasAttribute(HIDE));
+  assert(live.visible);assert(live.selected);assert(f.collapsed);
+  assert.equal(h.calls.length,0);
+  f.collapsed=false;await h.manager.animateExpand(f);
+  assert.equal(h.animations.length,2);await h.finish(h.animations[1]);
+  assert(!sleep.hasAttribute(MOTION));assert(!sleep.hasAttribute(HIDE));
+  assert.equal(h.window.__zenSafeCloseLoadedFolders.status.animatingRows,0);
 });
