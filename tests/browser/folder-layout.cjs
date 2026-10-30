@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path');
 const {firefox}=require(path.join(process.env.ZSC_BROWSER_DEPS,'node_modules/playwright'));
-const source=fs.readFileSync(process.env.ZSC_FOLDER_SOURCE||path.join(__dirname,'../../zen-safe-close.uc.js'),'utf8');
+const source=fs.readFileSync(process.env.ZSC_FOLDER_SOURCE||path.join(__dirname,'../../zen-safe-close.uc.js'),'utf8').replace(/\r\n/g,'\n');
 const begin=source.lastIndexOf('(() => {',source.indexOf('const FLAG = "data-zsc-loaded-folders"'));
 const code=source.slice(begin,source.indexOf('\n(() => {',begin+1));
 const oldCode=code.replace("    [${FLAG}] [${BOX}]:not([${HIDE}]),\n    [${FLAG}] [${BOX}][${MOTION}] { display: flex !important; flex-direction: column; }","    [${FLAG}] [${BOX}]:not([${HIDE}]) { display: flex !important; flex-direction: column; }");
