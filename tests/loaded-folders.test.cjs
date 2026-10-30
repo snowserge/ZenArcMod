@@ -211,6 +211,8 @@ test('active child never prevents repeated folder toggles (ARM macOS regression)
     assert(sleep.hasAttribute(HIDE));assert(live.visible);assert(f.collapsed);
   }
   h.change(false);
-  assert.equal(h.manager.animateCollapse,h.originals.animateCollapse);
+  assert.equal(await h.manager.animateCollapse(f),'native');
   assert(f.collapsed);assert(live.selected);
+  h.api.uninstall();
+  assert.equal(h.manager.animateCollapse,h.originals.animateCollapse);
 });
