@@ -133,3 +133,21 @@ test('remembered rows waiting for background restore are not painted as unloaded
   h.window.__zenSafeCloseSessionMemory.isRememberedLoaded=()=>false;h.change({});
   assert(h.unloaded.attrs.has('data-zsc-unloaded'));
 });
+
+test("folder slash is structural and remains available without inactive effects", () => {
+  const h = setup({ visuals: false, includeFolders: false, hideUnload: true });
+  const generated = rules(h.css());
+  const slash = generated.find(rule => rule.body.includes('content: "/"'));
+  assert(slash);
+  assert.match(slash.selector, /:root\[zen-sidebar-expanded="true"\]/);
+  assert.match(slash.selector, /#tabbrowser-tabs zen-folder /);
+  for (const state of ["pending", "selected", "visuallyselected", "zen-pinned-changed",
+    "hover", "data-zsc-unloaded", "data-zsc-folder-hidden"]) {
+    assert(!slash.selector.includes(state), state + " must not gate the slash");
+  }
+  assert.match(slash.body, /pointer-events: none/);
+  assert(generated.some(rule => rule.selector.endsWith(".tab-reset-pin-button::after") &&
+    rule.body.includes("content: none !important")));
+  h.change({ enabled: false });
+  assert.equal(h.css(), "");
+});

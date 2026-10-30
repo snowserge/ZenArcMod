@@ -9,6 +9,7 @@ Sine JavaScript mod for Zen Browser. No Node.js is required to install or run it
 - Show Zen's existing native empty screen after closing a pinned tab, without creating a blank tab row.
 - Preserve sidebar scroll and clear the address-bar focus on that empty screen.
 - Hide the close X independently of the minus/unload button.
+- Consistent decorative slash before folder-tab titles, independent of URL, loading or hover state.
 - Sepia or grayscale for unloaded pinned tabs, including pinned tabs inside folders.
 - Configurable visual scope: pinned only by default; all tabs optionally.
 - Optional loaded-tab visibility: keep all loaded tabs visible in every collapsed folder, including nested folders, independently of the selected tab.
@@ -131,6 +132,15 @@ row direction, squeezing sleeping tabs side by side. A real Firefox layout check
 now reproduces the old rule and verifies collapse, rapid reversal and reopening
 with zero, one and two loaded tabs. See
 [empty-folder animation checks](tests/empty-folder-animation.md).
+
+## Folder slash
+
+When ZenArcMod is enabled, tabs in folders show one decorative `/` before the title
+in the expanded sidebar. It is independent of loaded/selected/hover state and
+navigation. Zen's reset-to-saved-URL button keeps its native behavior; only its
+duplicate slash is suppressed inside folders. Tabs outside folders keep Zen's
+native changed-URL indicator. Disabling the mod restores native styling.
+See [cause, tests and Windows/macOS checklist](tests/folder-slash.md).
 
 ## Compatibility and limits
 
