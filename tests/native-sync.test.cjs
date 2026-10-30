@@ -233,3 +233,36 @@ test("Windows shares ownership without hiddenDOMWindow, including a newly opened
   b.api.uninstall(); c.api.uninstall();
   assert(!bag.__zenSafeCloseNativeSyncOwners);
 });
+
+for (const signature of ['object', 'legacy']) {
+  test(`protected close unloads through ${signature} discard API after selecting a landing tab`, async () => {
+    const h=environment().open(), pin=h.tab('loaded-pin'), landing=h.tab('landing',false);
+    const attrs=new Set(), calls=[];
+    pin.hasAttribute=name=>attrs.has(name);landing.hasAttribute=()=>false;
+    const gb=h.window.gBrowser;gb.selectedTab=pin;
+    gb.runBeforeUnloadForTabs=async tabs=>{assert.equal(tabs[0],pin);calls.push('beforeunload');return false;};
+    gb.prepareDiscardBrowser=async tab=>{assert.equal(tab,pin);assert.equal(gb.selectedTab,landing);calls.push('prepare');};
+    function discard(tab, force) {
+      assert.equal(tab,pin);assert.equal(force,true);assert.equal(gb.selectedTab,landing);
+      calls.push('discard');attrs.add('pending');return true;
+    }
+    gb.discardBrowser=signature==='legacy'?discard:function(tab, {forceDiscard,renderDiscarded}) {
+      assert.equal(renderDiscarded,true);return discard(tab,forceDiscard);
+    };
+    await h.api.closePinned([pin]);
+    assert.deepEqual(calls,['beforeunload','prepare','discard']);
+    assert(pin.pinned);assert(pin.isConnected);assert(attrs.has('pending'));
+    assert.equal(h.removed.length,0);assert.equal(h.api.status.pending,0);
+  });
+}
+test('cancelled beforeunload keeps a protected pin loaded', async () => {
+  const h=environment().open(),pin=h.tab('loaded-pin'),landing=h.tab('landing',false);
+  pin.hasAttribute=landing.hasAttribute=()=>false;
+  const gb=h.window.gBrowser;gb.selectedTab=pin;
+  gb.runBeforeUnloadForTabs=async()=>true;
+  gb.prepareDiscardBrowser=()=>assert.fail('cancelled unload must not prepare');
+  gb.discardBrowser=()=>assert.fail('cancelled unload must not discard');
+  await h.api.closePinned([pin]);
+  assert(pin.pinned);assert(pin.isConnected);assert(!pin.hasAttribute('pending'));
+  assert.equal(h.removed.length,0);assert.match(h.api.status.lastError,/cancelled/);
+});
