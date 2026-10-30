@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           ZenArcMod
-// @version        2.5.3
+// @version        2.5.4
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,7 +9,7 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.5.3";
+  const VERSION = "2.5.4";
   const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {
@@ -19,7 +19,7 @@
   let disposed = false, quitting = false, installed = false;
   let lastError = "", cancelLanding = null;
   const PREFIX = "zen-safe-close.";
-  const DEFAULTS = {"enabled":true,"protectPinned":true,"emptyScreen":true,"neutralFocus":true,"preserveScroll":true,"hideClose":true,"hideUnload":false,"visuals":true,"includeFolders":true,"inactive":"unloaded","effect":"sepia","opacity":"1","strength":"1","saturation":"0.6","gestures":true,"newGesture":"D","closeGesture":"DR","gestureDistance":"24","settleTime":"200","menuDelay":"500","visualScope":"pinned","density":"roomy","showLoadedInFolders":false,"rememberLoadedTabs":false,"collapseSleepingFoldersAtStartup":true,"trail":true,"trailColor":"#168f85","trailWidth":"12"};
+  const DEFAULTS = {"enabled":true,"protectPinned":true,"emptyScreen":true,"neutralFocus":true,"preserveScroll":true,"hideClose":true,"hideUnload":false,"visuals":true,"includeFolders":true,"inactive":"unloaded","effect":"sepia","opacity":"1","strength":"1","saturation":"0.6","gestures":true,"newGesture":"D","closeGesture":"DR","gestureDistance":"24","settleTime":"200","menuDelay":"500","visualScope":"pinned","density":"roomy","showLoadedInFolders":false,"rememberLoadedTabs":false,"collapseSleepingFoldersAtStartup":true,"trail":true,"trailColor":"#168f85","trailWidth":"12","manageSyncIntervals":true,"syncActiveInterval":"120","syncIdleInterval":"600","syncImmediateInterval":"90","folderPopup":false};
   let config = {}, configRevision = 0, configErrors = [];
   let onConfigChanged = () => {};
   function readConfig() {
@@ -45,6 +45,10 @@
     if (!/^#[0-9a-f]{6}$/i.test(next.trailColor)) next.trailColor = DEFAULTS.trailColor;
     number("settleTime", 0, 1000);
     number("menuDelay", 0, 1500);
+    for (const key of ["syncActiveInterval", "syncIdleInterval", "syncImmediateInterval"]) {
+      number(key, 60, 86400);
+      next[key] = Math.round(next[key]);
+    }
     if (!["roomy", "cosy", "compact"].includes(next.density)) next.density = "roomy";
     if (!["unloaded", "unselected"].includes(next.inactive)) next.inactive = "unloaded";
     if (!["pinned", "all"].includes(next.visualScope)) next.visualScope = "pinned";
@@ -304,6 +308,7 @@
         lastError, hooks: originals.map(item => item[1]),
         folderLayout: win.__zenSafeCloseLoadedFolders?.status, sessionMemory: win.__zenSafeCloseSessionMemory?.status,
         startupFolders: win.__zenSafeCloseStartupFolderRule?.status,
+        browserSettings: win.__zenSafeCloseBrowserSettings?.status,
         nativeSync: win.__zenSafeCloseNativeSync?.status };
     }
   };
@@ -1332,6 +1337,160 @@
       ready = true; schedule();
     }).catch(error => Components.utils.reportError("[ZenArcMod startup folders] " + error));
   } catch (error) { Components.utils.reportError("[ZenArcMod startup folders] " + error); }
+})();
+
+
+(() => {
+  "use strict";
+  const win = window, api = win.__zenSafeClose;
+  if (!api) return;
+  win.__zenSafeCloseBrowserSettings?.destroy();
+  const BACKUP = "zen-safe-close-internal.browserSettings.v1";
+  const SYNC_KEYS = ["manageSyncIntervals", "syncActiveInterval", "syncIdleInterval",
+    "syncImmediateInterval", "folderPopup"];
+  const INTERVALS = [
+    ["syncActiveInterval", "services.sync.scheduler.activeInterval", "activeInterval", 600],
+    ["syncIdleInterval", "services.sync.scheduler.idleInterval", "idleInterval", 3600],
+    ["syncImmediateInterval", "services.sync.scheduler.immediateInterval", "immediateInterval", 90]
+  ];
+  const POPUP = "zen.folders.search.enabled";
+  const types = new Map([[POPUP, "boolean"],
+    ...INTERVALS.map(([, pref]) => [pref, "number"]),
+    ...SYNC_KEYS.map(key => ["services.sync.prefs.sync.zen-safe-close." + key, "boolean"])]);
+  const shared = api.sharedHost.__zenSafeCloseBrowserSettingsOwners ||= {
+    owners: new Map(), timer: null, scheduler: null, signature: "", lastError: ""
+  };
+  let stopped = false, quitting = false;
+  let timers;
+  try { timers = ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs"); }
+  catch (error) { Components.utils.reportError("[ZenArcMod browser settings] " + error); return; }
+  const read = (pref, fallback) => types.get(pref) === "boolean"
+    ? Services.prefs.getBoolPref(pref, fallback) : Services.prefs.getIntPref(pref, fallback);
+  const write = (pref, value) => types.get(pref) === "boolean"
+    ? Services.prefs.setBoolPref(pref, value) : Services.prefs.setIntPref(pref, value);
+  function report(error) {
+    shared.lastError = String(error);
+    Components.utils.reportError("[ZenArcMod browser settings] " + error);
+  }
+  function backup() {
+    const raw = Services.prefs.getStringPref(BACKUP, "");
+    const saved = raw ? JSON.parse(raw) : {};
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) throw Error("Invalid browser-settings backup");
+    for (const [pref, entry] of Object.entries(saved)) {
+      const type = types.get(pref);
+      if (!type || !entry || typeof entry.hadUser !== "boolean" ||
+          typeof entry.value !== type || typeof entry.applied !== type ||
+          (type === "number" && (!Number.isInteger(entry.value) || !Number.isInteger(entry.applied)))) {
+        throw Error("Invalid browser-settings backup: " + pref);
+      }
+    }
+    return saved;
+  }
+  function save(saved) {
+    if (Object.keys(saved).length) Services.prefs.setStringPref(BACKUP, JSON.stringify(saved));
+    else Services.prefs.clearUserPref(BACKUP);
+  }
+  function updateScheduler() {
+    try {
+      // Do not initialize Sync, sign in, or start network work just to set prefs.
+      const service = Components.classes["@mozilla.org/weave/service;1"]
+        .getService(Components.interfaces.nsISupports).wrappedJSObject;
+      if (!service.ready) return;
+      const sync = ChromeUtils.importESModule("resource://services-sync/main.sys.mjs").Weave.Service;
+      const scheduler = sync.scheduler;
+      if (!scheduler || typeof scheduler.adjustSyncInterval !== "function" ||
+          typeof scheduler.checkSyncStatus !== "function") throw Error("Sync scheduler unavailable; restart Zen to apply intervals");
+      const values = INTERVALS.map(([, pref, , fallback]) => Math.max(60, read(pref, fallback)) * 1000);
+      const signature = values.join(",");
+      if (shared.scheduler === scheduler && shared.signature === signature) return;
+      for (let i = 0; i < INTERVALS.length; i++) scheduler[INTERVALS[i][2]] = values[i];
+      const incoming = scheduler.hasIncomingItems;
+      try { scheduler.adjustSyncInterval(); }
+      finally { scheduler.hasIncomingItems = incoming; }
+      scheduler.checkSyncStatus(); // Native offline/account/backoff checks remain in charge.
+      shared.scheduler = scheduler; shared.signature = signature;
+    } catch (error) { report(error); }
+  }
+  function apply() {
+    if (shared.timer !== null) { timers.clearTimeout(shared.timer); shared.timer = null; }
+    try {
+      const config = [...shared.owners.keys()].find(owner => owner.config.enabled)?.config;
+      const desired = new Map();
+      if (config) {
+        for (const key of SYNC_KEYS) desired.set("services.sync.prefs.sync.zen-safe-close." + key, true);
+        desired.set(POPUP, config.folderPopup);
+        if (config.manageSyncIntervals) for (const [key, pref] of INTERVALS) desired.set(pref, config[key]);
+      }
+      const saved = backup();
+      // Persist originals before changing native prefs, including across shutdown.
+      for (const [pref, value] of desired) {
+        if (!saved[pref]) saved[pref] = {
+          hadUser: Services.prefs.prefHasUserValue(pref), value: read(pref, value), applied: value
+        };
+        saved[pref].applied = value;
+      }
+      save(saved);
+      let popupChanged = false, intervalsChanged = false;
+      for (const [pref, value] of desired) if (read(pref, value) !== value || !Services.prefs.prefHasUserValue(pref)) {
+        write(pref, value); if (pref === POPUP) popupChanged = true;
+        if (INTERVALS.some(([, name]) => name === pref)) intervalsChanged = true;
+      }
+      for (const [pref, entry] of Object.entries(saved)) if (!desired.has(pref)) {
+        // Preserve newer external changes instead of overwriting them on release.
+        if (read(pref, entry.applied) === entry.applied) {
+          if (entry.hadUser) write(pref, entry.value); else Services.prefs.clearUserPref(pref);
+          if (INTERVALS.some(([, name]) => name === pref)) intervalsChanged = true;
+        }
+        delete saved[pref];
+      }
+      save(saved);
+      if (popupChanged && !read(POPUP, true)) {
+        for (const ownerWindow of shared.owners.values()) ownerWindow.gZenFolders?.cancelPopupTimer?.();
+      }
+      if (config?.manageSyncIntervals || intervalsChanged) updateScheduler();
+    } catch (error) { report(error); }
+  }
+  function schedule() {
+    if (shared.timer === null) shared.timer = timers.setTimeout(apply, 0);
+  }
+  function changed() { if (!stopped && !quitting) schedule(); }
+  const ready = { observe() {
+    if (!stopped && !quitting && [...shared.owners.keys()].some(owner =>
+      owner.config.enabled && owner.config.manageSyncIntervals)) updateScheduler();
+  } };
+  const quit = { observe() {
+    quitting = true;
+    if (shared.timer !== null) { timers.clearTimeout(shared.timer); shared.timer = null; }
+  } };
+  shared.owners.set(api, win);
+  Services.obs.addObserver(ready, "weave:service:ready");
+  Services.obs.addObserver(ready, "weave:service:sync:finish");
+  Services.obs.addObserver(quit, "quit-application-granted");
+  win.addEventListener("ZenSafeCloseConfigChanged", changed);
+  const originalUninstall = api.uninstall;
+  function destroy() {
+    if (stopped) return;
+    stopped = true; shared.owners.delete(api);
+    Services.obs.removeObserver(ready, "weave:service:ready");
+    Services.obs.removeObserver(ready, "weave:service:sync:finish");
+    Services.obs.removeObserver(quit, "quit-application-granted");
+    win.removeEventListener("ZenSafeCloseConfigChanged", changed);
+    win.removeEventListener("unload", destroy);
+    if (!quitting) schedule(); // A same-turn hot reload can reacquire the shared backup.
+    else if (!shared.owners.size && shared.timer !== null) { timers.clearTimeout(shared.timer); shared.timer = null; }
+    if (api.uninstall === combinedUninstall) api.uninstall = originalUninstall;
+    if (win.__zenSafeCloseBrowserSettings?.destroy === destroy) delete win.__zenSafeCloseBrowserSettings;
+  }
+  function combinedUninstall() { destroy(); return originalUninstall.call(api); }
+  api.uninstall = combinedUninstall;
+  win.addEventListener("unload", destroy, { once: true });
+  if (typeof win.addUnloadListener === "function") win.addUnloadListener(combinedUninstall);
+  win.__zenSafeCloseBrowserSettings = { destroy,
+    get status() { return { managed: api.config.enabled && api.config.manageSyncIntervals,
+      activeSeconds: read(INTERVALS[0][1], 600), idleSeconds: read(INTERVALS[1][1], 3600),
+      immediateSeconds: read(INTERVALS[2][1], 90), folderPopup: read(POPUP, true),
+      liveScheduler: !!shared.scheduler, lastError: shared.lastError }; } };
+  apply();
 })();
 
 (() => {

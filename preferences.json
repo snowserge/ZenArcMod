@@ -186,6 +186,40 @@
     "defaultValue": true
   },
   {
+    "property": "zen-safe-close.folderPopup",
+    "type": "checkbox",
+    "label": "Show folder tab search popup on hover",
+    "defaultValue": false
+  },
+  {
+    "type": "separator",
+    "label": "Sync intervals (seconds)"
+  },
+  {
+    "property": "zen-safe-close.manageSyncIntervals",
+    "type": "checkbox",
+    "label": "Use custom browser sync intervals",
+    "defaultValue": true
+  },
+  {
+    "property": "zen-safe-close.syncActiveInterval",
+    "type": "string",
+    "label": "Sync while active: seconds (60–86400)",
+    "defaultValue": "120"
+  },
+  {
+    "property": "zen-safe-close.syncIdleInterval",
+    "type": "string",
+    "label": "Sync while idle: seconds (60–86400)",
+    "defaultValue": "600"
+  },
+  {
+    "property": "zen-safe-close.syncImmediateInterval",
+    "type": "string",
+    "label": "Accelerated follow-up sync: seconds (60–86400)",
+    "defaultValue": "90"
+  },
+  {
     "type": "separator",
     "label": "Mouse gestures on all pages"
   },
