@@ -18,8 +18,11 @@ With the option enabled:
   selecting and changing collapsed state refresh the layout.
 - Selecting a tab in an entirely loaded folder preserves its collapsed state,
   rather than triggering Zen's automatic expansion.
-- Layout is immediate while enabled. Native folder layout/animation entry
-  points are delegated unchanged while off. Native visibility is recalculated
+- With 2.5.3, user toggles animate entering/leaving rows (180ms ease-in-out).
+  Loaded rows retain their places as the intervening rows shrink/grow. Reduced
+  motion and Zen's _dontAnimateFolder setting keep layout immediate. Native
+  folder layout/animation entry points are delegated unchanged while off.
+  Native visibility is recalculated
   from the current selection when the option is disabled; prior sticky
   visibility history is not recreated.
 
@@ -146,3 +149,55 @@ folders, repeated toggles and immediate wheel/keyboard navigation on both OSes.
 
 Diagnostics available in window.__zenSafeClose.status include folderLayout and
 sessionMemory counters, with no tab titles or URLs.
+
+## 2.5.3 toggle animation regression
+
+With loaded-tab visibility on, the previous wrapper replaced all five native
+animation entry points with render() and Promise.resolve(false). render()
+switched unloaded rows directly between display:none and normal layout. This
+made toggling jump even though the Windows initialization fix itself changed no
+animation code.
+
+The wrapper now measures affected rows before the render, then animates only
+entering/leaving rows' height, vertical margins and opacity using WAAPI. A
+temporary attribute keeps leaving rows and otherwise-hidden ancestor containers
+paintable until they reach zero height; it is removed on finish, cancellation,
+failure, disable and uninstall. Native activeTabs/pending/selection semantics
+stay unchanged. Nested hidden branches animate once as a unit. A reversal reads
+the current interpolated geometry before cancelling the old effect. Old promise
+callbacks cannot clear newer animation ownership.
+
+The temporary min-height:0 applies only to rows/containers carrying the motion
+attribute. It is removed with that attribute, including on interruption; there
+is no permanent positive outer-row minimum height or opacity override from the
+earlier ARM regression. Styling effects still belong to .tab-stack.
+
+ResizeObserver notifications caused by the transition do not trigger a full
+folder render each frame. A settled refresh reconciles layout afterwards.
+Explicit tab/restore/grouping events can still schedule reconciliation.
+Session restoration and background discard/restore remain immediate.
+
+Source comparison: current
+[ZenFolders.mjs](https://github.com/zen-browser/desktop/blob/dev/src/zen/folders/ZenFolders.mjs)
+uses height/opacity transitions with 180ms duration and ease-in-out for toggles.
+This implementation preserves the mode's all-loaded visibility policy rather
+than calling native selection-only animations.
+
+Run node --test tests/folder-motion.test.cjs plus the complete node --test suite.
+The WAAPI and geometry fixtures test transition ownership, rapid reversal,
+nested branches, reduced motion, native animation disable, resize feedback,
+moving tabs, animation failure and independent-folder cleanup. These fixtures
+do not render Gecko.
+
+Live acceptance still required on Windows and ARM macOS:
+- With one selected loaded row, an unselected loaded row and several unloaded
+  rows interleaved, repeatedly expand/collapse. Loaded rows should move smoothly
+  as intervening rows shrink/grow, with no final jump or selection change.
+- Reverse a toggle halfway through; click a different folder during a transition.
+- Repeat for empty/all-unloaded, all-loaded, nested folders and Split View.
+- Repeat Roomy/Cosy/Compact, opacity 1/0.4, reduced motion, and near the bottom of
+  a scrolled sidebar. Wheel/keyboard input must interrupt anchoring.
+- Disable the option or mod during a transition. Confirm no motion attributes or
+  zero heights linger, and native animation works with the option off.
+
+No live Windows/macOS rendering or perceived smoothness verification is claimed.

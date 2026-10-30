@@ -39,7 +39,7 @@ and gestures were registered.
 1. Back up the existing `chrome/sine-mods/zen-safe-close` folder and `chrome/sine-mods/mods.json`.
 2. Disable the existing ZenArcMod entry and restart Zen so its old hooks are removed.
 3. Install this repository through Sine. It uses the same stable mod ID, `zen-safe-close`.
-4. Restart Zen and confirm the card shows version 2.5.2 and a Configure button.
+4. Restart Zen and confirm the card shows version 2.5.3 and a Configure button.
 5. Enable updates for the mod in Sine. Existing `zen-safe-close.*` preferences remain in the browser profile.
 
 Do not run an older AutoConfig/userChrome copy alongside the Sine mod.
@@ -64,11 +64,12 @@ Under **Folder visibility**, enable **Always show loaded tabs in collapsed folde
 to keep every loaded tab visible in all folders. It is off by default and applies
 immediately. Collapsed folders hide unloaded tabs; expanded folders show their
 normal contents. Restoring/unloading a tab updates its visibility automatically.
-The option does not load or unload tabs. While enabled it uses immediate folder
-layout rather than native collapse animations, and keeps folder collapsed flags
-unchanged. Folder toggles preserve the clicked header position; wheel, keyboard
-or pointer input immediately cancels the event-driven header anchoring. Turning the
-option off restores native visibility based on current selection.
+The option does not load or unload tabs. Folder toggles animate entering/leaving
+rows over 180ms while keeping loaded tabs visible and collapsed flags unchanged.
+Rapid toggles continue from the current visual height. Reduced-motion and Zen's
+animation-disable setting use immediate layout. Folder toggles preserve the
+clicked header position; wheel, keyboard or pointer input cancels header anchoring.
+Turning the option off restores native visibility based on current selection.
 **Collapse folders without loaded tabs at startup** is enabled by default.
 After native session restoration it collapses folders containing only sleeping
 tabs or placeholders, including empty nested branches. Remembered tabs queued
