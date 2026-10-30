@@ -24,8 +24,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     env:
       ZSC_BROWSER_DEPS: ${{ github.workspace }}/.browser-test-tools
     steps:
@@ -39,3 +42,5 @@ jobs:
         run: '"$ZSC_BROWSER_DEPS/node_modules/.bin/playwright" install --with-deps firefox'
       - name: Check Firefox folder rendering
         run: node tests/browser/folder-layout.cjs
+      - name: Check Firefox folder slash rendering
+        run: node tests/browser/folder-slash.cjs

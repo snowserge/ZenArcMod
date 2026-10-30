@@ -406,6 +406,30 @@
           }
         `);
       }
+      // Folder slash is structural, independent of Zen's URL-change/reset state.
+      // Own only a decorative pseudo-element; leave reset button behavior intact.
+      const folderTab = ':root[zen-sidebar-expanded="true"] #tabbrowser-tabs zen-folder ' +
+        '.tabbrowser-tab:not([zen-essential]):not([zen-empty-tab]):not([zen-glance-tab])' +
+        ':not(.tabbrowser-tab .tabbrowser-tab)';
+      const folderLabel = folderTab + ' > .tab-stack > .tab-content > .tab-label-container';
+      rules.push(`
+        ${folderLabel} {
+          position: relative;
+          padding-inline-start: 10px;
+        }
+        ${folderLabel}::before {
+          content: "/";
+          position: absolute;
+          inset-inline-start: 0;
+          top: 50%;
+          transform: translateY(-50%);
+          pointer-events: none;
+          color: inherit;
+        }
+        ${folderTab} > .tab-stack > .tab-content > .tab-reset-pin-button::after {
+          content: none !important;
+        }
+      `);
       if (c.hideClose) rules.push(".tabbrowser-tab[pinned] .tab-close-button { display: none !important; }");
       if (c.hideUnload) rules.push(".tabbrowser-tab[pinned] .tab-reset-button { display: none !important; }");
       if (c.visuals) {
