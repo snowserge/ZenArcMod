@@ -24,7 +24,7 @@ function node(localName) {
     remove() { this.isConnected = false; } };
 }
 function setup(on = true, available = true, extras = {}) {
-  const folders = [], listeners = new Map(), frames = new Map(), originals = {}, calls = [];
+  const folders = [], listeners = new Map(), frames = new Map(), timers = new Map(), originals = {}, calls = [];
   let id = 0, observer, invalidations = 0;
   function folder(parent = null) {
     const f = node('zen-folder'); f.group = parent; f.collapsed = true; f.direct = [];
@@ -70,20 +70,23 @@ function setup(on = true, available = true, extras = {}) {
     removeEventListener(type,fn) { const set=listeners.get(type);set?.delete(fn);if (!set?.size) listeners.delete(type); },
     getComputedStyle: () => ({overflowY: "auto"}),
     requestAnimationFrame(fn) { const n=++id;frames.set(n,fn);return n; },
-    cancelAnimationFrame(n) { frames.delete(n); } };
+    cancelAnimationFrame(n) { frames.delete(n); },
+    setTimeout(fn) { const n=++id;timers.set(n,fn);return n; },
+    clearTimeout(n) { timers.delete(n); } };
   const errors = [];
   class MutationObserver {
     constructor(callback) { this.callback=callback; observer=this; }
-    observe() {} disconnect() { this.disconnected=true; }
+    observe(target,options) { this.options=options; } disconnect() { this.disconnected=true; }
   }
   const context={window,document:{documentElement:root,createElementNS:()=>node('style')},
     MutationObserver,ResizeObserver:extras.ResizeObserver,Components:{utils:{reportError:e=>errors.push(e)}}};
   if (!extras.skipModule) vm.runInNewContext(code,context);
   const refresh=()=>window.__zenSafeCloseLoadedFolders.refresh();
   function flush() {const work=[...frames.values()];frames.clear();work.forEach(fn=>fn());}
+  function flushJobs() {const work=[...timers.values()];timers.clear();work.forEach(fn=>fn());}
   function fire(type,target=window) { for (const fn of [...(listeners.get(type)||[])]) fn({type,target}); }
   return { folder,tab,folders,api,manager,originals,calls,root,window,errors,frames,listeners,fire,context,
-    refresh,flush,get observer(){return observer;},
+    refresh,flush,flushJobs,timers,get observer(){return observer;},
     change(value) {api.config.showLoadedInFolders=value;fire('ZenSafeCloseConfigChanged');} };
 }
 

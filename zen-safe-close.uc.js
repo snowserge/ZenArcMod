@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           ZenArcMod
-// @version        2.5.4
+// @version        2.5.5
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,7 +9,7 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.5.4";
+  const VERSION = "2.5.5";
   const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {
@@ -825,6 +825,7 @@
   if (!api || !win.gBrowser) return;
   win.__zenSafeCloseLoadedFolders?.destroy();
   const FLAG = "data-zsc-loaded-folders";
+  const RESTORE = "__zenSafeClosePendingFolderRestore";
   const HIDE = "data-zsc-folder-hidden", BOX = "data-zsc-folder-container";
   const START = "data-zsc-folder-start", MOTION = "data-zsc-folder-motion";
   const motions = new Map(), motionBoxes = new Set();
@@ -854,7 +855,7 @@
     touched.add(node);
     if (node.hasAttribute(attr) !== !!value) node.toggleAttribute(attr, !!value);
   }
-  function clearLayout(node) {
+  function clearLayout(node, start = false) {
     if (!node || cleaned.has(node)) return;
     cleaned.add(node);
     // Only native folder-animation properties; keep appearance on .tab-stack.
@@ -863,7 +864,7 @@
       const keys = animation.effect?.getKeyframes?.() || [];
       if (keys.some(key => ["opacity", "height", "minHeight", "marginTop"].some(p => p in key))) animation.cancel();
     }
-    for (const prop of ["opacity", "height", "min-height"]) node.style.removeProperty(prop);
+    for (const prop of ["opacity", "height", "min-height", ...(start ? ["margin-top"] : [])]) node.style.removeProperty(prop);
   }
   function folders() {
     return Array.from(win.gBrowser.tabContainer?.querySelectorAll("zen-folder") || [])
@@ -913,6 +914,7 @@
         mark(box, HIDE, (folder.collapsed || collapsedParent(folder)) && !live.length);
       }
       const start = folder.groupStartElement;
+      clearLayout(start, true);
       mark(start, START, true);
       manager.updateFolderIcon?.(folder);
     }
@@ -1172,7 +1174,34 @@
     }
     return true;
   }
-  function restore() {
+  function nativeRestore(all) {
+    // Capture native functions, not wrappers belonging to a later generation.
+    for (const folder of all.slice().reverse()) {
+      if (!folder.isConnected) continue;
+      const name = folder.collapsed ? "animateCollapse" : "animateExpand";
+      const original = hooks.find(([object, method]) => object === manager && method === name)?.[2] || manager?.[name];
+      try { Promise.resolve(original?.call(manager, folder)).catch(error => Components.utils.reportError(error)); }
+      catch (error) { Components.utils.reportError(error); }
+    }
+  }
+  function deferNativeRestore(all) {
+    win[RESTORE]?.cancel();
+    const pending = {
+      timer: null,
+      cancel() {
+        if (pending.timer !== null) win.clearTimeout(pending.timer);
+        pending.timer = null;
+        if (win[RESTORE] === pending) delete win[RESTORE];
+      }
+    };
+    win[RESTORE] = pending;
+    pending.timer = win.setTimeout(() => {
+      if (win[RESTORE] !== pending) return;
+      pending.cancel();
+      if (!win.closed && !win.__zenSafeCloseLoadedFolders?.status.active) nativeRestore(all);
+    }, 0);
+  }
+  function restore(native = "now") {
     stopMotions();
     cancelPosition?.();
     active = false;
@@ -1186,13 +1215,10 @@
     const tabs = new Set(all.flatMap(folder => Array.from(folder.tabs || [])));
     for (const folder of all) { folder.removeAttribute("has-active"); folder.activeTabs = []; }
     for (const tab of tabs) { tab.removeAttribute("folder-active"); cleaned.delete(tab); clearLayout(tab); }
-    // Recompute native visibility from the current selection. Keep all folder
-    // collapsed flags and tab loading state unchanged when toggling the option.
-    for (const folder of all.reverse()) {
-      const name = folder.collapsed ? "animateCollapse" : "animateExpand";
-      try { Promise.resolve(manager[name](folder)).catch(error => Components.utils.reportError(error)); }
-      catch (error) { Components.utils.reportError(error); }
-    }
+    // Disable the option immediately, but give Sine's same-turn replacement a
+    // chance to take ownership before starting asynchronous native animations.
+    if (native === "defer") deferNativeRestore(all);
+    else if (native === "now") nativeRestore(all);
     ownedFolders.clear();
     managedTabs.clear();
     cleaned = new WeakSet();
@@ -1203,6 +1229,7 @@
   }
   function refresh() {
     if (enabled() && installHooks()) {
+      win[RESTORE]?.cancel();
       active = true;
       document.documentElement.setAttribute(FLAG, "true");
       render();
@@ -1221,7 +1248,7 @@
       if (record.type === "attributes") {
         if (record.attributeName !== "style") return true;
         const node = record.target;
-        if (!cleaned.has(node) || !["opacity", "height", "min-height"].some(prop => node.style.getPropertyValue(prop))) return false;
+        if (!cleaned.has(node) || !["opacity", "height", "min-height", ...(node.hasAttribute(START) ? ["margin-top"] : [])].some(prop => node.style.getPropertyValue(prop))) return false;
         // An old native animation or another layout callback wrote after the
         // initial cleanup. Clean only that node on the next pass.
         cleaned.delete(node); return true;
@@ -1231,9 +1258,9 @@
     })) schedule();
   });
   observer.observe(win.gBrowser.tabContainer, { subtree: true, childList: true,
-    attributes: true, attributeFilter: ["pending", "collapsed", "style"] });
+    attributes: true, attributeFilter: ["pending", "collapsed", "style", "hidden"] });
   const originalUninstall = api.uninstall;
-  function destroy() {
+  function destroy(event) {
     if (stopped) return;
     stopped = true;
     if (frame !== null) win.cancelAnimationFrame(frame);
@@ -1243,7 +1270,7 @@
     win.removeEventListener("ZenSafeCloseConfigChanged", changed);
     win.removeEventListener("unload", destroy);
     cancelPosition?.();
-    if (active) restore();
+    if (active) restore(event?.type === "unload" || win.closed ? "skip" : "defer");
     for (const [object, name, original, replacement] of hooks.reverse()) {
       if (object[name] === replacement) object[name] = original;
     }
