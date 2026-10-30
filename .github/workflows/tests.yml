@@ -23,7 +23,7 @@ jobs:
   firefox-layout:
     runs-on: ubuntu-latest
     env:
-      ZSC_BROWSER_DEPS: ${{ runner.temp }}/zsc-browser
+      ZSC_BROWSER_DEPS: ${{ github.workspace }}/.browser-test-tools
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
