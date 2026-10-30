@@ -21,7 +21,11 @@ jobs:
       - run: node --test
 
   firefox-layout:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     env:
       ZSC_BROWSER_DEPS: ${{ github.workspace }}/.browser-test-tools
     steps:
