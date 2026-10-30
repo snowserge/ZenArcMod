@@ -62,7 +62,8 @@ function environment() {
     }
     browser.selectedTab = tab("selected-ordinary", false);
     const context = vm.createContext({ window,
-      Services: { appShell: { hiddenDOMWindow: host },
+      Services: { wm: { getEnumerator: () => windows },
+        appShell: { get hiddenDOMWindow() { throw Error("NS_ERROR_FAILURE"); } },
         obs: { addObserver() {}, removeObserver() {} },
         prefs: { getDefaultBranch: () => ({
           setBoolPref: (key, value) => defaults[key] = value,
@@ -86,7 +87,7 @@ function environment() {
       adapter: () => window.__zenSafeCloseNativeSync,
       installSync: () => vm.runInContext(adapter, context) };
   }
-  return { open, cloud, local, host, errors };
+  return { open, cloud, local, host, windows, errors };
 }
 const deferred = () => {
   let resolve, reject;
@@ -219,4 +220,49 @@ test("hot reload preserves an in-flight tombstone without authorizing unrelated 
   assert.equal(h.removed[0].tab, pin);
   wait.resolve(); await result;
   assert.equal(h.adapter().status.activeRemovals, 0);
+});
+
+test("Windows shares ownership without hiddenDOMWindow, including a newly opened window", () => {
+  const e = environment(), a = e.open(), b = e.open();
+  assert.equal(a.api.sharedHost, b.api.sharedHost);
+  const bag = a.api.sharedHost;
+  a.api.uninstall(); e.windows.splice(e.windows.indexOf(a.window), 1);
+  const c = e.open();
+  assert.equal(c.api.sharedHost, bag);
+  assert.equal(c.adapter().status.hooks.length, 2);
+  b.api.uninstall(); c.api.uninstall();
+  assert(!bag.__zenSafeCloseNativeSyncOwners);
+});
+
+for (const signature of ['object', 'legacy']) {
+  test(`protected close unloads through ${signature} discard API after selecting a landing tab`, async () => {
+    const h=environment().open(), pin=h.tab('loaded-pin'), landing=h.tab('landing',false);
+    const attrs=new Set(), calls=[];
+    pin.hasAttribute=name=>attrs.has(name);landing.hasAttribute=()=>false;
+    const gb=h.window.gBrowser;gb.selectedTab=pin;
+    gb.runBeforeUnloadForTabs=async tabs=>{assert.equal(tabs[0],pin);calls.push('beforeunload');return false;};
+    gb.prepareDiscardBrowser=async tab=>{assert.equal(tab,pin);assert.equal(gb.selectedTab,landing);calls.push('prepare');};
+    function discard(tab, force) {
+      assert.equal(tab,pin);assert.equal(force,true);assert.equal(gb.selectedTab,landing);
+      calls.push('discard');attrs.add('pending');return true;
+    }
+    gb.discardBrowser=signature==='legacy'?discard:function(tab, {forceDiscard,renderDiscarded}) {
+      assert.equal(renderDiscarded,true);return discard(tab,forceDiscard);
+    };
+    await h.api.closePinned([pin]);
+    assert.deepEqual(calls,['beforeunload','prepare','discard']);
+    assert(pin.pinned);assert(pin.isConnected);assert(attrs.has('pending'));
+    assert.equal(h.removed.length,0);assert.equal(h.api.status.pending,0);
+  });
+}
+test('cancelled beforeunload keeps a protected pin loaded', async () => {
+  const h=environment().open(),pin=h.tab('loaded-pin'),landing=h.tab('landing',false);
+  pin.hasAttribute=landing.hasAttribute=()=>false;
+  const gb=h.window.gBrowser;gb.selectedTab=pin;
+  gb.runBeforeUnloadForTabs=async()=>true;
+  gb.prepareDiscardBrowser=()=>assert.fail('cancelled unload must not prepare');
+  gb.discardBrowser=()=>assert.fail('cancelled unload must not discard');
+  await h.api.closePinned([pin]);
+  assert(pin.pinned);assert(pin.isConnected);assert(!pin.hasAttribute('pending'));
+  assert.equal(h.removed.length,0);assert.match(h.api.status.lastError,/cancelled/);
 });

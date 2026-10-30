@@ -29,12 +29,17 @@ Sine JavaScript mod for Zen Browser. No Node.js is required to install or run it
 Keep `zen.urlbar.replace-newtab` enabled for the native empty-screen behavior.
 Disable Gesturefy (and any other mouse gesture extension) before enabling this mod's gestures, so one stroke runs one command. No extension is required.
 
+For Windows installation, diagnostics and the manual acceptance checklist, see
+[Windows guide](tests/windows-installation.md). Version 2.5.2 removes a macOS-only
+hidden-window dependency that could stop initialization before folder visibility
+and gestures were registered.
+
 ## Migrate from the manually installed mod
 
 1. Back up the existing `chrome/sine-mods/zen-safe-close` folder and `chrome/sine-mods/mods.json`.
 2. Disable the existing ZenArcMod entry and restart Zen so its old hooks are removed.
 3. Install this repository through Sine. It uses the same stable mod ID, `zen-safe-close`.
-4. Restart Zen and confirm the card shows version 2.5.1 and a Configure button.
+4. Restart Zen and confirm the card shows version 2.5.2 and a Configure button.
 5. Enable updates for the mod in Sine. Existing `zen-safe-close.*` preferences remain in the browser profile.
 
 Do not run an older AutoConfig/userChrome copy alongside the Sine mod.

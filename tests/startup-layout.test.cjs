@@ -7,7 +7,7 @@ function combined() {
  const groups=[h.folder(),h.folder(),h.folder()];const live=[],sleep=[];
  for(const f of groups){for(let i=0;i<4;i++)live.push(h.tab(f,true));sleep.push(h.tab(f,true));}
  const tabs=[...live,...sleep],values=new Map(live.map(t=>[t,'1']));sleep.forEach(t=>values.set(t,'0'));
- const env=session.shared(),reloads=[];let resolve;const ready=new Promise(r=>{resolve=r;});
+ const env=session.shared(),reloads=[];h.api.sharedHost=env.host;let resolve;const ready=new Promise(r=>{resolve=r;});
  Object.assign(h.window,{setTimeout:env.setTimeout,clearTimeout:env.clearTimeout,
   CustomEvent:class{constructor(type){this.type=type;}},dispatchEvent:e=>h.fire(e.type),
   SessionStore:{promiseAllWindowsRestored:ready,getCustomTabValue:t=>values.get(t)||'',
@@ -15,7 +15,7 @@ function combined() {
  h.window.gBrowser.tabs=tabs;h.window.gBrowser.getBrowserForTab=t=>({reload:()=>reloads.push(t)});
  class MutationObserver {constructor(fn){this.fn=fn;}observe(){}disconnect(){}}
  vm.runInNewContext(session.code,{window:h.window,Services:env.services,MutationObserver,
-  ChromeUtils:{importESModule:()=>({PrivateBrowsingUtils:{isWindowPrivate:()=>false}})},
+  ChromeUtils:{importESModule:()=>({setTimeout:env.setTimeout,clearTimeout:env.clearTimeout,PrivateBrowsingUtils:{isWindowPrivate:()=>false}})},
   Components:{utils:{reportError:e=>h.errors.push(e)}}});
  vm.runInNewContext(folders.code,h.context);
  return {...h,groups,live,sleep,values,env,reloads,async initialized(){resolve();for(let i=0;i<3;i++)await Promise.resolve();env.tick();h.flush();}};

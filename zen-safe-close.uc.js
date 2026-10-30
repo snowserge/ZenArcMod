@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           ZenArcMod
-// @version        2.5.1
+// @version        2.5.2
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,7 +9,7 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.5.1";
+  const VERSION = "2.5.2";
   const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {
@@ -267,7 +267,18 @@
     }
     if (win.__zenSafeClose === api) delete win.__zenSafeClose;
   }
+  // Share ownership through live browser windows on every OS. Keep the bag on
+  // the window across Sine hot reloads; surviving windows retain the same bag
+  // when the first window closes. Never depend on macOS's hidden DOM window.
+  let sharedHost = win.__zenSafeCloseSharedHost;
+  if (!sharedHost) {
+    for (const other of S.wm?.getEnumerator("navigator:browser") || []) {
+      if (other.__zenSafeCloseSharedHost) { sharedHost = other.__zenSafeCloseSharedHost; break; }
+    }
+    win.__zenSafeCloseSharedHost = sharedHost ||= {};
+  }
   const api = {
+    sharedHost,
     version: VERSION, closePinned: handle, uninstall: destroy,
     get config() { return config; },
     setConfig(values) {
@@ -483,7 +494,7 @@
   if (!api || !win.gBrowser) return;
   win.__zenSafeCloseNativeSync?.destroy();
   const SYNC = "__zenSafeCloseNativeSyncOwners";
-  const host = Services.appShell.hiddenDOMWindow;
+  const host = api.sharedHost;
   const shared = host[SYNC] ||= { owners: new Set(), ids: new Map(), hooks: [], errors: [] };
   let stopped = false;
   // These IDs exist only while Zen applies a native removal. Never persist a
@@ -587,7 +598,9 @@
   } catch (error) { Components.utils.reportError("[ZenArcMod session] " + error); return; }
   // Never write private browsing metadata or change policy from a private window.
   if (privateWindow) return;
-  const host = Services.appShell.hiddenDOMWindow;
+  const host = api.sharedHost;
+  // Module timers survive the browser window that released the last owner.
+  const timers = ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs");
   const shared = host.__zenSafeCloseSessionOwners ||= { owners: new Set(), restoreTimer: null };
   const enabled = () => !stopped && api.config.enabled && api.config.rememberLoadedTabs;
   function report(error) { lastError = String(error); Components.utils.reportError("[ZenArcMod session] " + lastError); }
@@ -628,7 +641,7 @@
   }
   function acquirePolicy() {
     if (owner) return true;
-    if (shared.restoreTimer !== null) { host.clearTimeout(shared.restoreTimer); shared.restoreTimer = null; }
+    if (shared.restoreTimer !== null) { timers.clearTimeout(shared.restoreTimer); shared.restoreTimer = null; }
     try {
       let raw = Services.prefs.getStringPref(BACKUP, "");
       if (!raw) {
@@ -652,7 +665,7 @@
     if (!preserve && !shared.owners.size && shared.restoreTimer === null) {
       // A same-turn Sine hot reload can reacquire ownership before restoring
       // policy; avoid briefly letting native queues load all sleeping tabs.
-      shared.restoreTimer = host.setTimeout(() => { shared.restoreTimer = null; restorePolicy(); }, 0);
+      shared.restoreTimer = timers.setTimeout(() => { shared.restoreTimer = null; restorePolicy(); }, 0);
     }
   }
   function cancelRequests() {
@@ -1241,7 +1254,7 @@
   // captures the mouse before a gesture can start. Defer it until mouse-up,
   // preserving the user's pref and restoring it after the last owner unloads.
   const menuPref = "ui.context_menus.after_mouseup";
-  const sharedHost = Services.appShell.hiddenDOMWindow;
+  const sharedHost = api.sharedHost;
   const sharedKey = "__zenSafeCloseGestureMenu";
   let menuOwner = null;
   function syncMenuPref() {

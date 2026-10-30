@@ -8,7 +8,7 @@ const gestures = source.slice(source.lastIndexOf('\n(() => {'));
 
 function shared(userValue) {
   const values = new Map(userValue === undefined ? [] : [['ui.context_menus.after_mouseup', userValue]]);
-  return { appShell: { hiddenDOMWindow: {} }, prefs: {
+  return { sharedHost: {}, appShell: { get hiddenDOMWindow() { throw Error('NS_ERROR_FAILURE'); } }, prefs: {
     values, prefHasUserValue: name => values.has(name),
     getBoolPref: (name, fallback) => values.get(name) ?? fallback,
     setBoolPref: (name, value) => values.set(name, value),
@@ -34,7 +34,7 @@ function setup({ url = 'https://example.org/', pinned = false, empty = false,
   const panel = { contains: target => target === browser,
     getBoundingClientRect: () => ({ left: 30, top: 80, width: 900, height: 600 }) };
   const popup = { state: 'closed', hidePopup() { popup.state = 'closed'; } };
-  const api = { config: c, status: { enabled: true, installed: true },
+  const api = { sharedHost: services.sharedHost, config: c, status: { enabled: true, installed: true },
     closePinned: tabs => commands.push(['unload', ...tabs]), uninstall() {} };
   const win = {
     __zenSafeClose: api, closed: false, devicePixelRatio: 2,
@@ -188,4 +188,12 @@ test('uninstall cancels pending work, removes canvas/listeners and preserves new
   assert.equal(h.frames.size, 0); assert.equal(h.timers.size, 0);
   assert.equal(h.liveNodes().length, 0);
   assert.equal(h.win.__zenSafeCloseGestures, undefined);
+});
+
+test('Windows hiddenDOMWindow is never needed to start or execute gestures', () => {
+  const services = shared();
+  assert.throws(() => services.appShell.hiddenDOMWindow, /NS_ERROR_FAILURE/);
+  const h = setup({ services }); h.stroke('D'); h.stroke('DR');
+  assert.deepEqual(h.commands.map(x => x[0]), ['new', 'close']);
+  assert.equal(h.errors.length, 0);
 });
