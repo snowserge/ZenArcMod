@@ -14,7 +14,7 @@ function shared() {
   getIntPref:(k,f=1)=>user.get(k)??f,setIntPref:(k,v)=>user.set(k,v),
   getStringPref:(k,f='')=>user.get(k)??f,setBoolPref:(k,v)=>user.set(k,v),setStringPref:(k,v)=>user.set(k,v),clearUserPref:k=>user.delete(k)};
  const host={setTimeout,clearTimeout};
- const services={prefs,appShell:{hiddenDOMWindow:host},obs:{
+ const services={prefs,appShell:{get hiddenDOMWindow(){throw Error("NS_ERROR_FAILURE");}},obs:{
   addObserver(o,n){if(!observers.has(n))observers.set(n,new Set());observers.get(n).add(o);},
   removeObserver(o,n){observers.get(n)?.delete(o);}
  }};
@@ -33,7 +33,7 @@ function setup({on=true,privateWindow=false,env=shared(),values=new Map(),tabs:s
  });
  const ss={promiseAllWindowsRestored:promise,getCustomTabValue:t=>values.get(t.id)||'',
   setCustomTabValue:(t,k,v)=>{assert.equal(k,KEY);values.set(t.id,v);},deleteCustomTabValue:t=>values.delete(t.id)};
- const api={config:{enabled:true,rememberLoadedTabs:on},uninstall(){}};
+ const api={sharedHost:env.host,config:{enabled:true,rememberLoadedTabs:on},uninstall(){}};
  const win={__zenSafeClose:api,SessionStore:ss,closed:false,
   CustomEvent:class {constructor(type){this.type=type;}},dispatchEvent(event){fire(event.type);},gBrowser:{tabs,tabContainer:{},getBrowserForTab:t=>t.linkedBrowser},
   setTimeout:env.setTimeout,clearTimeout:env.clearTimeout,
@@ -42,7 +42,7 @@ function setup({on=true,privateWindow=false,env=shared(),values=new Map(),tabs:s
  let observer;
  class MutationObserver {constructor(fn){observer=this;this.fn=fn;}observe(){}disconnect(){this.disconnected=true;}}
  vm.runInNewContext(code,{window:win,Services:env.services,MutationObserver,
-  ChromeUtils:{importESModule:()=>({PrivateBrowsingUtils:{isWindowPrivate:()=>privateWindow}})},
+  ChromeUtils:{importESModule:()=>({setTimeout:env.setTimeout,clearTimeout:env.clearTimeout,PrivateBrowsingUtils:{isWindowPrivate:()=>privateWindow}})},
   Components:{utils:{reportError:e=>errors.push(String(e))}}});
  function fire(type,target=win){for(const fn of [...(listeners.get(type)||[])])fn({type,target});}
  async function initialized(){resolve();for(let i=0;i<3;i++)await Promise.resolve();env.tick();}

@@ -200,3 +200,17 @@ test('disconnected workspace scrollers release anchoring styles and scroll liste
   assert.equal(box.style.getPropertyValue('overflow-anchor'),'');assert.equal(box.listenerCount('scroll'),0);
   assert.equal(h.window.__zenSafeCloseLoadedFolders.status.scrollers,0);
 });
+
+test('active child never prevents repeated folder toggles (ARM macOS regression)', async () => {
+  const h=setup(),f=h.folder(),live=h.tab(f),sleep=h.tab(f,true);
+  live.selected=true;h.refresh();
+  for(let i=0;i<6;i++) {
+    f.collapsed=false;await h.manager.animateExpand(f);h.flush();
+    assert(!sleep.hasAttribute(HIDE));assert(live.visible);
+    f.collapsed=true;await h.manager.animateCollapse(f);h.flush();
+    assert(sleep.hasAttribute(HIDE));assert(live.visible);assert(f.collapsed);
+  }
+  h.change(false);
+  assert.equal(h.manager.animateCollapse,h.originals.animateCollapse);
+  assert(f.collapsed);assert(live.selected);
+});

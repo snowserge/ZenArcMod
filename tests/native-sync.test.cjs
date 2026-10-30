@@ -62,7 +62,8 @@ function environment() {
     }
     browser.selectedTab = tab("selected-ordinary", false);
     const context = vm.createContext({ window,
-      Services: { appShell: { hiddenDOMWindow: host },
+      Services: { wm: { getEnumerator: () => windows },
+        appShell: { get hiddenDOMWindow() { throw Error("NS_ERROR_FAILURE"); } },
         obs: { addObserver() {}, removeObserver() {} },
         prefs: { getDefaultBranch: () => ({
           setBoolPref: (key, value) => defaults[key] = value,
@@ -86,7 +87,7 @@ function environment() {
       adapter: () => window.__zenSafeCloseNativeSync,
       installSync: () => vm.runInContext(adapter, context) };
   }
-  return { open, cloud, local, host, errors };
+  return { open, cloud, local, host, windows, errors };
 }
 const deferred = () => {
   let resolve, reject;
@@ -219,4 +220,16 @@ test("hot reload preserves an in-flight tombstone without authorizing unrelated 
   assert.equal(h.removed[0].tab, pin);
   wait.resolve(); await result;
   assert.equal(h.adapter().status.activeRemovals, 0);
+});
+
+test("Windows shares ownership without hiddenDOMWindow, including a newly opened window", () => {
+  const e = environment(), a = e.open(), b = e.open();
+  assert.equal(a.api.sharedHost, b.api.sharedHost);
+  const bag = a.api.sharedHost;
+  a.api.uninstall(); e.windows.splice(e.windows.indexOf(a.window), 1);
+  const c = e.open();
+  assert.equal(c.api.sharedHost, bag);
+  assert.equal(c.adapter().status.hooks.length, 2);
+  b.api.uninstall(); c.api.uninstall();
+  assert(!bag.__zenSafeCloseNativeSyncOwners);
 });
