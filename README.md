@@ -39,7 +39,7 @@ and gestures were registered.
 1. Back up the existing `chrome/sine-mods/zen-safe-close` folder and `chrome/sine-mods/mods.json`.
 2. Disable the existing ZenArcMod entry and restart Zen so its old hooks are removed.
 3. Install this repository through Sine. It uses the same stable mod ID, `zen-safe-close`.
-4. Restart Zen and confirm the card shows version 2.5.3 and a Configure button.
+4. Restart Zen and confirm the card shows version 2.5.4 and a Configure button.
 5. Enable updates for the mod in Sine. Existing `zen-safe-close.*` preferences remain in the browser profile.
 
 Do not run an older AutoConfig/userChrome copy alongside the Sine mod.
@@ -94,6 +94,29 @@ Turning session memory off restores the saved startup/restore preferences
 (unless externally changed) and removes markers on open tabs. Private windows
 are excluded. Pages load again; this does not preserve their live JavaScript
 heap or guarantee unsaved application data. See [session-memory verification](tests/session-memory.md).
+
+Under **Sync intervals (seconds)**, **Use custom browser sync intervals** is on by
+default. Active = 120, idle = 600 and accelerated follow-up = 90 seconds.
+Each field accepts a custom value from 60 to 86400 seconds; fractional values
+are rounded and invalid/empty fields use the documented default. Changes apply
+to the running native scheduler when Sync is ready, without restarting Zen.
+This adjusts background scheduling; native change-triggered sync, server backoff,
+account/offline checks and the single-device policy remain native.
+
+Under **Folder visibility**, **Show folder tab search popup on hover** controls
+`zen.folders.search.enabled`. It is off by default. Turning it off also closes
+an existing hover popup; it does not affect folder expansion or loaded-tab
+visibility.
+
+These five mod controls are included in Firefox's preference-sync allowlist.
+With Settings sync enabled and ZenArcMod installed on both computers, custom
+intervals, their enable switch and the popup choice can travel between them.
+Native scheduler preferences themselves are not added to that allowlist.
+Each profile independently backs up its previous native values. Disabling
+custom intervals restores only the three scheduler preferences; disabling or
+uninstalling the mod also restores its previous popup and allowlist values,
+while preserving newer external changes. Backups survive browser shutdown and
+same-turn Sine hot reloads. See [browser-settings verification](tests/browser-settings.md).
 
 ## Compatibility and limits
 
