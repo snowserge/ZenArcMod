@@ -284,5 +284,36 @@
   {
     "type": "separator",
     "label": "Gestures must be different. Invalid settings disable the system page gesture handler."
+  },
+  {
+    "type": "separator",
+    "label": "uBlock Origin sync (experimental)"
+  },
+  {
+    "property": "zen-safe-close.ublockSync",
+    "type": "checkbox",
+    "label": "Automatically sync uBlock settings through Mozilla (first join imports cloud settings; saves a local backup)",
+    "defaultValue": false
+  },
+  {
+    "property": "zen-safe-close.ublockSyncResolution",
+    "type": "dropdown",
+    "label": "Resolve a uBlock sync conflict (resets after use)",
+    "defaultValue": "pause",
+    "options": [
+      {
+        "label": "Keep paused until I choose",
+        "value": "pause"
+      },
+      {
+        "label": "Keep this computer’s settings",
+        "value": "local"
+      },
+      {
+        "label": "Use cloud settings",
+        "value": "remote"
+      }
+    ],
+    "placeholder": false
   }
 ]

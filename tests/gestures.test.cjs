@@ -4,7 +4,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { test } = require('node:test');
 const source = fs.readFileSync(path.join(__dirname, '../zen-safe-close.uc.js'), 'utf8');
-const gestures = source.slice(source.lastIndexOf('\n(() => {'));
+const gestureStart = source.lastIndexOf('\n(() => {', source.indexOf('win.__zenSafeCloseGestures?.destroy()'));
+const gestures = source.slice(gestureStart, source.indexOf('\n(() => {', gestureStart + 1));
 
 function shared(userValue) {
   const values = new Map(userValue === undefined ? [] : [['ui.context_menus.after_mouseup', userValue]]);
@@ -197,3 +198,4 @@ test('Windows hiddenDOMWindow is never needed to start or execute gestures', () 
   assert.deepEqual(h.commands.map(x => x[0]), ['new', 'close']);
   assert.equal(h.errors.length, 0);
 });
+

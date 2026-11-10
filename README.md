@@ -19,6 +19,22 @@ Sine JavaScript mod for Zen Browser. No Node.js is required to install or run it
 - A teal mouse trail that grows with travelled distance, with configurable color and maximum width.
 - Live settings in Sine's Configure dialog, shared between windows.
 
+## uBlock Origin sync — 2.6.0
+
+Opt-in automatic synchronization through the same Mozilla account: ordinary and
+advanced uBlock settings, selected/imported filter lists, My filters, permanent
+rules and trusted sites. Local changes are sampled every 30 seconds; transfer
+between computers follows Mozilla Sync's normal schedule. No additional server,
+account or extension is required. The normal manual uBlock cloud slots are left
+intact. This feature is disabled by default on each device.
+
+The feature is opt-in and was tested automatically with simulated browser objects.
+The user reported that the beta appeared to work; the full two-device checklist
+has not been independently verified. Internal browser APIs and Mozilla storage
+quotas may require follow-up adjustments.
+
+See [setup, conflict handling, backup recovery and live checks](tests/ublock-sync.md).
+
 ## Install
 
 1. Install Sine: https://github.com/CosmoCreeper/Sine
@@ -166,3 +182,4 @@ MIT; see LICENSE.txt.
 
 For releases, advance both `version` and the explicit UTC `updatedAt` in
 `theme.json`; Sine detects updates by date. Keep the script version in sync.
+
