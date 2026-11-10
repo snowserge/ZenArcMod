@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           ZenArcMod
-// @version        2.5.6
+// @version        2.6.0-beta.1
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,7 +9,7 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.5.6";
+  const VERSION = "2.6.0-beta.1";
   const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {
@@ -19,7 +19,7 @@
   let disposed = false, quitting = false, installed = false;
   let lastError = "", cancelLanding = null;
   const PREFIX = "zen-safe-close.";
-  const DEFAULTS = {"enabled":true,"protectPinned":true,"emptyScreen":true,"neutralFocus":true,"preserveScroll":true,"hideClose":true,"hideUnload":false,"visuals":true,"includeFolders":true,"inactive":"unloaded","effect":"sepia","opacity":"1","strength":"1","saturation":"0.6","gestures":true,"newGesture":"D","closeGesture":"DR","gestureDistance":"24","settleTime":"200","menuDelay":"500","visualScope":"pinned","density":"roomy","showLoadedInFolders":false,"rememberLoadedTabs":false,"collapseSleepingFoldersAtStartup":true,"trail":true,"trailColor":"#168f85","trailWidth":"12","manageSyncIntervals":true,"syncActiveInterval":"120","syncIdleInterval":"600","syncImmediateInterval":"90","folderPopup":false};
+  const DEFAULTS = {"ublockSync":false,"ublockSyncResolution":"pause","enabled":true,"protectPinned":true,"emptyScreen":true,"neutralFocus":true,"preserveScroll":true,"hideClose":true,"hideUnload":false,"visuals":true,"includeFolders":true,"inactive":"unloaded","effect":"sepia","opacity":"1","strength":"1","saturation":"0.6","gestures":true,"newGesture":"D","closeGesture":"DR","gestureDistance":"24","settleTime":"200","menuDelay":"500","visualScope":"pinned","density":"roomy","showLoadedInFolders":false,"rememberLoadedTabs":false,"collapseSleepingFoldersAtStartup":true,"trail":true,"trailColor":"#168f85","trailWidth":"12","manageSyncIntervals":true,"syncActiveInterval":"120","syncIdleInterval":"600","syncImmediateInterval":"90","folderPopup":false};
   let config = {}, configRevision = 0, configErrors = [];
   let onConfigChanged = () => {};
   function readConfig() {
@@ -309,6 +309,7 @@
         folderLayout: win.__zenSafeCloseLoadedFolders?.status, sessionMemory: win.__zenSafeCloseSessionMemory?.status,
         startupFolders: win.__zenSafeCloseStartupFolderRule?.status,
         browserSettings: win.__zenSafeCloseBrowserSettings?.status,
+        ublockSync: win.__zenSafeCloseUBlockSync?.status,
         nativeSync: win.__zenSafeCloseNativeSync?.status };
     }
   };
@@ -1785,4 +1786,355 @@
   // Keep the old diagnostic entry point working for existing installations.
   win.__zenSafeCloseSystemGestures = gestureAPI;
   syncMenuPref();
+})();
+
+
+
+
+
+
+
+// uBlock sync: opt-in, independent per-device records in Mozilla extension storage.
+(() => {
+  "use strict";
+  const win = window, api = win.__zenSafeClose;
+  if (!api) return;
+  win.__zenSafeCloseUBlockSync?.destroy();
+  const KEY = "zenarc-ubo-v1.", ID = "uBlock0@raymondhill.net";
+  const STATE = "zen-safe-close-internal.ublockSync.v1";
+  const shared = api.sharedHost.ublockSync ||= { owners: new Set(), busy: false, status: "disabled", error: "", fresh: false };
+  const owner = { win, api };
+  shared.owners.add(owner);
+  let stopped = false;
+
+  // Pure reconciliation. Vector clocks preserve concurrent offline edits;
+  // wall-clock timestamps never decide which settings are authoritative.
+  function reconcile(local, state, records, resolution = "pause") {
+    const merge = clocks => Object.assign({}, ...clocks.flatMap(c => Object.entries(c).map(([k]) =>
+      ({ [k]: Math.max(...clocks.map(v => v[k] || 0)) }))));
+    const dominates = (a, b) => Object.keys(b).every(k => (a[k] || 0) >= b[k]);
+    const make = clock => ({ digest: local.digest, data: local.data,
+      clock: { ...clock, [state.device]: (clock[state.device] || 0) + 1 } });
+    let candidates = [...records];
+    const dirty = state.digest && state.digest !== local.digest;
+    if (dirty || !records.length) candidates.push(make(state.clock || {}));
+    else if (state.digest) candidates.push({ ...local, clock: state.clock || {} });
+    // Equal clocks with unequal payloads are corruption, not a valid winner.
+    for (let i = 0; i < candidates.length; i++) for (let j = i + 1; j < candidates.length; j++) {
+      if (dominates(candidates[i].clock, candidates[j].clock) && dominates(candidates[j].clock, candidates[i].clock) &&
+          candidates[i].digest !== candidates[j].digest) throw Error("Inconsistent cloud revision");
+    }
+    const heads = candidates.filter(a => !candidates.some(b => b !== a && dominates(b.clock, a.clock) && !dominates(a.clock, b.clock)));
+    const clock = merge([state.clock || {}, ...candidates.map(r => r.clock)]);
+    const conflicts = new Set(heads.map(r => r.digest)).size > 1;
+    if (resolution === "local") return { action: "publish", record: make(clock) };
+    if (resolution === "remote") {
+      const remoteHeads = records.filter(a => !records.some(b => b !== a && dominates(b.clock, a.clock) && !dominates(a.clock, b.clock)));
+      if (new Set(remoteHeads.map(r => r.digest)).size !== 1) return { action: "conflict" };
+      const r = remoteHeads[0];
+      return { action: "apply-publish", record: { ...r, clock: { ...clock, [state.device]: (clock[state.device] || 0) + 1 } } };
+    }
+    if (conflicts) return { action: "conflict" };
+    const head = heads[0];
+    if (head.digest !== local.digest) return { action: "apply", record: { ...head, clock } };
+    const published = records.some(r => r.digest === local.digest && dominates(r.clock, clock));
+    return published ? { action: "adopt", record: { ...head, clock } } : { action: "publish", record: make(clock) };
+  }
+  function canonical(value) {
+    if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
+    if (value && typeof value === "object") return "{" + Object.keys(value).sort().map(k => JSON.stringify(k) + ":" + canonical(value[k])).join(",") + "}";
+    return JSON.stringify(value);
+  }
+  function validate(data) {
+    if (!data || data.schema !== 1 || typeof data.uboVersion !== "string" || typeof data.userFilters !== "string") throw Error("Unsupported uBlock snapshot");
+    for (const key of ["rules", "whitelist", "selectedFilterLists"]) {
+      if (!Array.isArray(data[key]) || !data[key].every(v => typeof v === "string")) throw Error("Invalid " + key);
+    }
+    for (const key of ["userSettings", "hiddenSettings"]) {
+      if (!data[key] || Array.isArray(data[key]) || typeof data[key] !== "object" ||
+          Object.values(data[key]).some(v => !["string", "boolean", "number"].includes(typeof v) && !(Array.isArray(v) && v.every(x => typeof x === "string")))) throw Error("Invalid " + key);
+    }
+    if (canonical(data).length > 1000000) throw Error("Settings exceed 1 MB safety limit");
+    return data;
+  }
+
+  // Runs only in a dedicated hidden uBO dashboard document, never on websites.
+  // The fixed command list uses uBO's own messaging and apply/reload routines.
+  function bridgeFrame(origin, channel) {
+    const Cu = Components.utils;
+    addMessageListener(channel, async message => {
+      const { serial, command, payload } = message.data;
+      try {
+        if (content.location.href !== origin + "settings.html") throw Error("Wrong extension document");
+        const w = content.wrappedJSObject;
+        if (!w.vAPI?.messaging) throw Error("uBlock dashboard is not ready");
+        const send = async request => {
+          const reply = await w.vAPI.messaging.send("dashboard", Cu.cloneInto(request, w));
+          return reply === undefined ? null : JSON.parse(w.JSON.stringify(reply));
+        };
+        const sorted = rows => [...rows].sort();
+        async function snapshot() {
+          const app = await send({ what: "getAppData" });
+          const settings = await send({ what: "userSettings" });
+          delete settings.canLeakLocalIPAddresses;
+          const hidden = await send({ what: "readHiddenSettings" });
+          const filters = await send({ what: "readUserFilters" });
+          const lists = await send({ what: "getLists" });
+          const white = await send({ what: "getWhitelist" });
+          const rules = await send({ what: "getRules" });
+          if (JSON.stringify(sorted(rules.permanentRules)) !== JSON.stringify(sorted(rules.sessionRules))) throw Error("Save or revert temporary uBlock rules before syncing");
+          return { schema: 1, uboVersion: app.version, userSettings: settings, hiddenSettings: hidden.current,
+            userFilters: filters.content, selectedFilterLists: Object.keys(lists.available).filter(k => lists.available[k].off !== true).sort(),
+            whitelist: sorted(white.whitelist), rules: sorted(rules.permanentRules) };
+        }
+        let result;
+        if (command === "snapshot") result = await snapshot();
+        else if (command === "apply") {
+          const current = await snapshot(), next = payload.next;
+          // Compare in the parent as well; this check closes the IPC round-trip gap.
+          if (JSON.stringify(current) !== JSON.stringify(payload.expected)) throw Error("Local settings changed while preparing sync");
+          if (current.uboVersion !== next.uboVersion) throw Error("Update uBlock to the same version on all devices");
+          if (Object.keys(current.userSettings).sort().join() !== Object.keys(next.userSettings).sort().join() ||
+              Object.keys(current.hiddenSettings).sort().join() !== Object.keys(next.hiddenSettings).sort().join()) throw Error("Incompatible uBlock settings schema");
+          for (const name of Object.keys(next.userSettings).sort()) {
+            // advancedUserEnabled changes popupPanelSections as a side effect;
+            // apply every field, in stable order, to restore the exact snapshot.
+            await send({ what: "userSettings", name, value: next.userSettings[name] });
+          }
+          await send({ what: "writeHiddenSettings", content: Object.entries(next.hiddenSettings).map(([k, v]) => k + " " + v).join("\n") });
+          await send({ what: "writeUserFilters", content: next.userFilters,
+            enabled: next.selectedFilterLists.includes("user-filters"), trusted: next.userSettings.userFiltersTrusted === true });
+          await send({ what: "applyFilterListSelection", toSelect: next.selectedFilterLists, merge: false });
+          await send({ what: "setWhitelist", whitelist: next.whitelist.join("\n") });
+          for (const permanent of [true, false]) await send({ what: "modifyRuleset", permanent,
+            toRemove: current.rules.join("\n"), toAdd: next.rules.join("\n") });
+          await send({ what: "reloadAllFilters" });
+          result = await snapshot();
+        } else throw Error("Unsupported bridge command");
+        sendAsyncMessage(channel, { serial, result });
+      } catch (error) { sendAsyncMessage(channel, { serial, error: String(error.message || error) }); }
+    });
+  }
+  function activeOwner() { return [...shared.owners].find(o => !o.win.closed && o.api.config.enabled && o.api.config.ublockSync); }
+  function status(value, error = "") {
+    const changed = shared.status !== value || shared.error !== error;
+    shared.status = value; shared.error = error;
+    if (changed && ["conflict", "paused"].includes(value)) {
+      const o = activeOwner();
+      try {
+        const box = o.win.gBrowser.getNotificationBox(o.win.gBrowser.selectedBrowser);
+        const buttons = value === "conflict" ? [
+          { label: "Keep this device", callback() { o.api.setConfig({ ublockSyncResolution: "local" }); } },
+          { label: "Use cloud", callback() { o.api.setConfig({ ublockSyncResolution: "remote" }); } }
+        ] : [];
+        box.appendNotification("zenarc-ublock-sync", { label: "ZenArcMod: uBlock sync " + value + ". " + error, priority: box.PRIORITY_WARNING_MEDIUM }, buttons)?.catch?.(() => {});
+      } catch (_) {}
+    }
+    Services.prefs.setStringPref("zen-safe-close-internal.ublockSync.status", value + (error ? ": " + error : ""));
+  }
+  function save(state) { Services.prefs.setStringPref(STATE, JSON.stringify(state)); }
+  function stateFor(uid) {
+    let state;
+    try { state = JSON.parse(Services.prefs.getStringPref(STATE, "null")); } catch (_) { throw Error("Invalid local sync state; restore the local state backup"); }
+    // A changed account must never inherit revision ancestry from the old one.
+    if (state && (!/^[a-f0-9]{32}$/.test(state.device) || !state.clock)) throw Error("Invalid local sync state");
+    if (state && state.uid !== uid) throw Error("Mozilla account changed; disable sync and reset its local state before joining the new account");
+    if (!state) { state = { uid, device: Services.uuid.generateUUID().toString().replace(/[{}-]/g, ""), clock: {} }; save(state); }
+    return state;
+  }
+  async function hash(w, text) {
+    const digest = await w.crypto.subtle.digest("SHA-256", new w.TextEncoder().encode(text));
+    return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("");
+  }
+  async function pack(w, record) {
+    const stream = new w.Blob([JSON.stringify(record)]).stream().pipeThrough(new w.CompressionStream("gzip"));
+    const bytes = new Uint8Array(await new w.Response(stream).arrayBuffer());
+    const value = { schema: 1, gzip: w.btoa(Array.from(bytes, b => String.fromCharCode(b)).join("")) };
+    if (JSON.stringify(value).length + KEY.length + 32 > 8192) throw Error("Compressed settings exceed Mozilla's 8 KB per-device item limit");
+    return value;
+  }
+  async function unpack(w, value) {
+    if (value?.schema !== 1 || typeof value.gzip !== "string" || value.gzip.length > 8192) throw Error("Invalid cloud snapshot");
+    const bytes = Uint8Array.from(w.atob(value.gzip), ch => ch.charCodeAt(0));
+    const reader = new w.Blob([bytes]).stream().pipeThrough(new w.DecompressionStream("gzip")).getReader();
+    const chunks = []; let length = 0;
+    try { for (;;) { const r = await reader.read(); if (r.done) break; length += r.value.length;
+      if (length > 1100000) throw Error("Cloud snapshot exceeds size limit"); chunks.push(r.value); }
+    } finally { await reader.cancel(); }
+    const record = JSON.parse(await new w.Blob(chunks).text());
+    validate(record.data);
+    if (!record.clock || Object.keys(record.clock).length > 32 || Object.entries(record.clock).some(([k, v]) => !/^[a-f0-9]{32}$/.test(k) || !Number.isSafeInteger(v) || v < 1)) throw Error("Invalid cloud revision");
+    if (await hash(w, canonical(record.data)) !== record.digest) throw Error("Cloud snapshot checksum mismatch");
+    return record;
+  }
+  async function connect(w, extension, Parent) {
+    const page = new Parent.HiddenExtensionPage(extension, "tab");
+    let browser;
+    try { browser = await page.createBrowserElement(); } catch (e) { page.shutdown(); throw e; }
+    const channel = "ZenArcUBlock:" + Services.uuid.generateUUID();
+    const mm = browser.messageManager;
+    let serial = 0;
+    const origin = extension.baseURI.spec;
+    const pending = new Map();
+    const listener = msg => { const task = pending.get(msg.data.serial); if (!task) return;
+      pending.delete(msg.data.serial); w.clearTimeout(task.timer);
+      if (msg.data.error) task.reject(Error(msg.data.error)); else task.resolve(msg.data.result); };
+    try {
+    mm.addMessageListener(channel, listener);
+    mm.loadFrameScript("data:application/javascript," + encodeURIComponent("(" + bridgeFrame.toString() + ")(" + JSON.stringify(origin) + "," + JSON.stringify(channel) + ")"), false);
+    browser.loadURI(Services.io.newURI(origin + "settings.html"), { triggeringPrincipal: extension.principal });
+    } catch (e) { page.shutdown(); throw e; }
+    const call = (command, payload) => new Promise((resolve, reject) => {
+      const id = ++serial, timer = w.setTimeout(() => { pending.delete(id); reject(Error("uBlock bridge timed out")); }, 30000);
+      pending.set(id, { resolve, reject, timer }); mm.sendAsyncMessage(channel, { serial: id, command, payload });
+    });
+    let closed = false;
+    const close = () => { if (closed) return; closed = true; for (const task of pending.values()) { w.clearTimeout(task.timer); task.reject(Error("Sync stopped")); }
+      pending.clear(); mm.removeMessageListener(channel, listener); page.shutdown(); };
+    return { call, close };
+  }
+  async function backup(state, data) {
+    const path = PathUtils.join(PathUtils.profileDir, "zenarc-ublock-backups");
+    await IOUtils.makeDirectory(path, { permissions: 0o700 });
+    const file = PathUtils.join(path, Date.now() + "-" + state.device + ".json");
+    await IOUtils.writeJSON(file, data, { tmpPath: file + ".tmp", permissions: 0o600 });
+    await IOUtils.setPermissions(file, 0o600);
+    return file;
+  }
+  async function restoreLastBackup() {
+    if (activeOwner() || shared.busy) throw Error("Disable uBlock sync before restoring a backup");
+    const state = JSON.parse(Services.prefs.getStringPref(STATE, "null"));
+    if (!state?.lastBackup) throw Error("No local backup exists");
+    const root = PathUtils.join(PathUtils.profileDir, "zenarc-ublock-backups");
+    if (PathUtils.parent(state.lastBackup) !== root) throw Error("Invalid backup path");
+    const next = validate(await IOUtils.readJSON(state.lastBackup));
+    const { ExtensionParent: Parent } = ChromeUtils.importESModule("resource://gre/modules/ExtensionParent.sys.mjs");
+    const extension = Parent.GlobalManager.getExtension(ID);
+    if (!extension) throw Error("uBlock is not running");
+    shared.busy = true;
+    let bridge;
+    try {
+      bridge = await connect(win, extension, Parent);
+      let expected;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        try { expected = validate(await bridge.call("snapshot")); break; }
+        catch (e) { if (!/not ready|Wrong extension/.test(e.message) || attempt === 19) throw e;
+          await new Promise(resolve => win.setTimeout(resolve, 250)); }
+      }
+      const result = await bridge.call("apply", { expected, next });
+      if (canonical(result) !== canonical(next)) throw Error("Backup restoration could not be verified");
+      delete state.pending; save(state); status("backup-restored-sync-disabled");
+    } finally { bridge?.close(); shared.busy = false; }
+  }
+  async function tick() {
+    const owner = activeOwner();
+    if (!owner || shared.busy) return;
+    shared.busy = true;
+    let bridge;
+    try {
+      const w = owner.win;
+      const { fxAccounts } = ChromeUtils.importESModule("resource://gre/modules/FxAccounts.sys.mjs");
+      const account = await fxAccounts.getSignedInUser();
+      if (!account?.verified) { shared.fresh = false; status("waiting-for-Mozilla-login"); return; }
+      if (!Services.prefs.getBoolPref("services.sync.engine.extension-storage", true) ||
+          !Services.prefs.getBoolPref("webextensions.storage.sync.enabled", true)) { status("extension-storage-sync-disabled"); return; }
+      if (!shared.fresh) { status("waiting-for-successful-Mozilla-sync"); return; }
+      const state = stateFor(account.uid);
+      if (state.pending && owner.api.config.ublockSyncResolution === "pause") throw Error("Previous apply did not finish; backup: " + state.pending);
+      const { ExtensionParent: Parent } = ChromeUtils.importESModule("resource://gre/modules/ExtensionParent.sys.mjs");
+      const extension = Parent.GlobalManager.getExtension(ID);
+      if (!extension || extension.hasShutdown) { status("uBlock-not-running"); return; }
+      const { extensionStorageSync: storage } = ChromeUtils.importESModule("resource://gre/modules/ExtensionStorageSync.sys.mjs");
+      const all = await storage.get(extension, null), records = [];
+      for (const [key, value] of Object.entries(all)) if (key.startsWith(KEY)) {
+        if (!/^[a-f0-9]{32}$/.test(key.slice(KEY.length))) throw Error("Invalid cloud device ID");
+        const record = await unpack(w, value);
+        if (!record.clock[key.slice(KEY.length)]) throw Error("Missing device revision");
+        records.push(record);
+      }
+      if (records.length > 32) throw Error("Too many cloud devices");
+      bridge = await connect(w, extension, Parent);
+      shared.bridge = bridge;
+      // The frame script can arrive before settings.html loads.
+      let data;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        if (!activeOwner()) return;
+        try { data = validate(await bridge.call("snapshot")); break; }
+        catch (e) { if (!/not ready|Wrong extension/.test(e.message) || attempt === 19) throw e;
+          await new Promise(resolve => w.setTimeout(resolve, 250)); }
+      }
+      const local = { data, digest: await hash(w, canonical(data)) };
+      const resolution = owner.api.config.ublockSyncResolution;
+      const plan = reconcile(local, state, records, resolution);
+      if (plan.action === "conflict") { status("conflict", "Choose a version in ZenArcMod > uBlock Origin sync. For multiple conflicting cloud versions, choose local on the device to keep."); return; }
+      const currentAccount = await fxAccounts.getSignedInUser();
+      if (!activeOwner() || currentAccount?.uid !== account.uid) return;
+      let record = plan.record;
+      // Check quotas before making any local changes, including explicit resolution.
+      const packed = await pack(w, record);
+      if (plan.action.startsWith("apply")) {
+        if (record.data.uboVersion !== data.uboVersion) throw Error("Update uBlock to the same version on all devices");
+        state.pending = await backup(state, data); state.lastBackup = state.pending; save(state);
+        status("applying-cloud-settings");
+        const result = validate(await bridge.call("apply", { expected: data, next: record.data }));
+        if (await hash(w, canonical(result)) !== record.digest) throw Error("Applied settings differ from the snapshot; sync paused, local backup retained");
+        delete state.pending;
+      }
+      if (plan.action === "publish" || plan.action === "apply-publish") {
+        if (!activeOwner() || (await fxAccounts.getSignedInUser())?.uid !== account.uid) return;
+        await storage.set(extension, { [KEY + state.device]: packed });
+        shared.queued = true;
+      }
+      delete state.pending; state.digest = record.digest; state.clock = record.clock; save(state);
+      if (resolution !== "pause") owner.api.setConfig({ ublockSyncResolution: "pause" });
+      status(shared.queued ? "queued-for-Mozilla-sync" : "up-to-date");
+    } catch (e) { status("paused", String(e.message || e)); }
+    finally { try { bridge?.close(); } catch (_) {} shared.bridge = null; shared.busy = false; }
+  }
+  function refresh() {
+    const active = activeOwner();
+    if (!active) {
+      if (shared.timer) { shared.clearInterval(shared.timer); shared.timer = null; }
+      try { shared.bridge?.close(); } catch (_) {}
+      shared.fresh = false; status("disabled"); return;
+    }
+    if (!shared.timer) {
+      const timers = ChromeUtils.importESModule("resource://gre/modules/Timer.sys.mjs");
+      shared.clearInterval = timers.clearInterval;
+      shared.timer = timers.setInterval(tick, 30000);
+    }
+    void tick();
+  }
+  if (!shared.observer) {
+    shared.observer = { observe(_, topic) {
+      if (topic === "weave:service:sync:finish") { const { Weave } = ChromeUtils.importESModule("resource://services-sync/main.sys.mjs");
+        shared.fresh = Weave.Status.sync === "success.sync" && Weave.Service.engineManager.get("extension-storage")?.enabled === true &&
+          (!Weave.Status.engines["extension-storage"] || Weave.Status.engines["extension-storage"] === "success.engine");
+        if (shared.fresh) shared.queued = false;
+        void tick(); }
+      else { shared.fresh = false; try { shared.bridge?.close(); } catch (_) {} status("waiting-for-Mozilla-login"); }
+    } };
+    for (const topic of ["weave:service:sync:finish", "fxaccounts:onlogout", "fxaccounts:onlogin"]) Services.obs.addObserver(shared.observer, topic);
+  }
+  const original = api.uninstall;
+  function destroy() {
+    if (stopped) return; stopped = true;
+    shared.owners.delete(owner);
+    win.removeEventListener("ZenSafeCloseConfigChanged", refresh);
+    win.removeEventListener("unload", destroy);
+    if (api.uninstall === uninstall) api.uninstall = original;
+    if (win.__zenSafeCloseUBlockSync?.destroy === destroy) delete win.__zenSafeCloseUBlockSync;
+    refresh();
+    if (!shared.owners.size) {
+      for (const topic of ["weave:service:sync:finish", "fxaccounts:onlogout", "fxaccounts:onlogin"]) Services.obs.removeObserver(shared.observer, topic);
+      shared.observer = null;
+    }
+  }
+  function uninstall() { destroy(); return original.call(api); }
+  api.uninstall = uninstall;
+  win.addEventListener("ZenSafeCloseConfigChanged", refresh);
+  win.addEventListener("unload", destroy, { once: true });
+  win.__zenSafeCloseUBlockSync = { destroy, sync: tick, restoreLastBackup,
+    get status() { return { state: shared.status, error: shared.error, busy: shared.busy }; } };
+  refresh();
 })();
