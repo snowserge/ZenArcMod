@@ -1,3 +1,11 @@
+# ZenArcMod-Beta — separate experimental mod
+
+This branch packages the entire experimental ZenArcMod as a separate Cosine/Sine mod with ID `zenarcmod-beta`. It includes experimental uBlock Origin sync. Install this branch as a custom GitHub mod:
+
+`https://github.com/snowserge/ZenArcMod/tree/zenarcmod-beta`
+
+Disable stable ZenArcMod before enabling this beta, and disable the beta before re-enabling stable. The two versions share browser preferences and cannot run their browser hooks simultaneously. Restart Zen after switching if the mod manager does not fully unload scripts. Sync is off by default. Back up uBlock settings on both devices before testing. The sync bridge and real two-device transfer have not been validated.
+
 # ZenArcMod
 
 Sine JavaScript mod for Zen Browser. No Node.js is required to install or run it.

@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name           ZenArcMod
+// @name           ZenArcMod-Beta
 // @version        2.6.0-beta.1
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
