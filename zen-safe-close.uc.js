@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           ZenArcMod-Beta
-// @version        2.6.0-beta.1
+// @version        2.6.0-beta.2
 // @description    Keep pinned tabs; unload to Zen's native empty screen.
 // @include        chrome://browser/content/browser.xhtml
 // ==/UserScript==
@@ -9,7 +9,7 @@
   "use strict";
   const win = window;
   const S = Services;
-  const VERSION = "2.6.0-beta.1";
+  const VERSION = "2.6.0-beta.2";
   const TAG = "[ZenArcMod]";
   if (win.location?.href !== "chrome://browser/content/browser.xhtml") return;
   if (win.__zenSafeClose) {
@@ -2033,7 +2033,10 @@
     let bridge;
     try {
       const w = owner.win;
-      const { fxAccounts } = ChromeUtils.importESModule("resource://gre/modules/FxAccounts.sys.mjs");
+      const accountsModule = ChromeUtils.importESModule("resource://gre/modules/FxAccounts.sys.mjs");
+      const fxAccounts = typeof accountsModule.getFxAccountsSingleton === "function"
+        ? accountsModule.getFxAccountsSingleton() : accountsModule.fxAccounts;
+      if (!fxAccounts || typeof fxAccounts.getSignedInUser !== "function") throw Error("Mozilla account service unavailable");
       const account = await fxAccounts.getSignedInUser();
       if (!account?.verified) { shared.fresh = false; status("waiting-for-Mozilla-login"); return; }
       if (!Services.prefs.getBoolPref("services.sync.engine.extension-storage", true) ||

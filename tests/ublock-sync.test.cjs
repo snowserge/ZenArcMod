@@ -141,7 +141,7 @@ test('disabled module shares observers, never imports extension internals, and c
  a.api.uninstall(); assert.equal(observers.size, 3); b.api.uninstall(); assert.equal(observers.size, 0); assert.equal(b.listeners.size, 0);
 });
 
-async function integration({ remote, backupError, applyError, mismatch, verified=true, fresh=true } = {}) {
+async function integration({ remote, backupError, applyError, mismatch, verified=true, fresh=true, modern=false } = {}) {
  const data = snapshot(), calls = [], values = new Map(), host = {};
  const stateKey = 'zen-safe-close-internal.ublockSync.v1';
  const storage = { async get() { calls.push('cloud-read'); return remote ? { ['zenarc-ubo-v1.'+B]: await h.pack(browserGlobals, { data: remote, digest: await h.hash(browserGlobals,h.canonical(remote)), clock: {[B]:1} }) } : {}; }, async set() { calls.push('cloud-write'); } };
@@ -155,7 +155,7 @@ async function integration({ remote, backupError, applyError, mismatch, verified
  const window = {__zenSafeClose:api,...browserGlobals,addEventListener(){},removeEventListener(){}};
  const Services = {uuid:{generateUUID:()=>A},prefs:{getStringPref:(k,d)=>values.get(k)??d,setStringPref:(k,v)=>values.set(k,v),getBoolPref:(k,d)=>d},obs:{addObserver(){},removeObserver(){}}};
  vm.runInNewContext(code, {window,Services,fixture,Uint8Array,ChromeUtils:{importESModule(uri){
-  if(uri.includes('FxAccounts'))return {fxAccounts:{getSignedInUser:async()=>({uid:'test-account',verified})}};
+  if(uri.includes('FxAccounts')) { const account={getSignedInUser:async()=>({uid:'test-account',verified})}; return modern ? {getFxAccountsSingleton:()=>account} : {fxAccounts:account}; }
   if(uri.includes('ExtensionParent'))return {ExtensionParent:{GlobalManager:{getExtension:()=>({id:'ubo'})}}};
   if(uri.includes('ExtensionStorageSync'))return {extensionStorageSync:storage};
   throw Error('unexpected import '+uri);
@@ -184,4 +184,8 @@ test('failed or mismatched apply leaves a durable recovery marker and never publ
 });
 test('successful local publication is queued for native Mozilla transfer', async()=>{
  const r=await integration();assert(r.calls.includes('cloud-write'));assert.equal(r.status.state,'queued-for-Mozilla-sync');assert(r.readState().digest);
+});
+
+test('supports the current Mozilla account singleton export', async()=>{
+ const r=await integration({modern:true});assert(r.calls.includes('cloud-write'));assert.equal(r.status.state,'queued-for-Mozilla-sync');
 });

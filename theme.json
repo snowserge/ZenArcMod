@@ -2,7 +2,7 @@
   "id": "zenarcmod-beta",
   "name": "ZenArcMod-Beta",
   "description": "Experimental ZenArcMod with uBlock Origin sync. Disable stable ZenArcMod before enabling this beta.",
-  "version": "2.6.0-beta.1",
+  "version": "2.6.0-beta.2",
   "supportsUnload": true,
   "scripts": {
     "zen-safe-close.uc.js": {
@@ -16,5 +16,5 @@
     "zen"
   ],
   "homepage": "https://github.com/snowserge/ZenArcMod/tree/zenarcmod-beta",
-  "updatedAt": "2026-11-10T16:35:47Z"
+  "updatedAt": "2026-11-10T16:47:21Z"
 }
